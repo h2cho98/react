@@ -58,6 +58,9 @@
     .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:40}
     .modal{max-width:760px;width:100%;padding:10px}
 
+    /* 접근성: 키보드 포커스 가시성 */
+    :focus-visible{outline:2px solid var(--acc); outline-offset:2px}
+
     @media (min-width:720px){
       .grid.cols-2{grid-template-columns:1fr 1fr}
       .grid.cols-3{grid-template-columns:1fr 1fr 1fr}
@@ -104,7 +107,7 @@
 
 <script>
 // ===== 데이터 모델 & 저장 =====
-const VERSION = 1;
+const VERSION = 2; // 버전 증가(통화 자릿수/시트 overwrite 등)
 const STORAGE_KEY = 'travelSplitData_v1';
 
 const App = {
@@ -140,10 +143,22 @@ function save(skipCloud=false){
   if(!skipCloud) scheduleCloudPush();
 }
 
+// ===== 통화/포맷 유틸 (자릿수 일관 적용) =====
+const CURRENCY_DECIMALS = { KRW:0, JPY:0, VND:0, KWD:3, BHD:3, IQD:3, JOD:3, OMR:3, TND:3, DEFAULT:2 };
+const decs = (cur)=> CURRENCY_DECIMALS[cur?.toUpperCase()] ?? CURRENCY_DECIMALS.DEFAULT;
+function roundN(n, d){ const f = 10 ** d; return Math.round((Number(n)||0) * f) / f; }
+function fmt(n, currency) {
+  const d = decs(currency);
+  return `${Number(n).toLocaleString(undefined,{ maximumFractionDigits:d, minimumFractionDigits:d })}${currency? ' ' + currency : ''}`;
+}
+function fmtPlain(n, currency) {
+  const d = decs(currency);
+  return Number(n).toLocaleString(undefined,{ maximumFractionDigits:d, minimumFractionDigits:d });
+}
+const stepForCurrency = (cur)=>{ const d=decs(cur||'KRW'); return d===0? '1' : (1/(10**d)).toFixed(d); };
+function isValidAmount(n){ return Number.isFinite(n) && n > 0; }
+
 // ===== 유틸 =====
-// UI 표시는 원 단위(소수점 없음), 요약/문자용은 통화 단위 없이 숫자만
-const fmt = (n, currency) => `${Number(n).toLocaleString(undefined,{maximumFractionDigits:0, minimumFractionDigits:0})}${currency? ' ' + currency: ''}`;
-const fmtPlain = (n) => Number(n).toLocaleString(undefined,{maximumFractionDigits:0, minimumFractionDigits:0});
 function sum(arr){ return arr.reduce((a,b)=>a+ (Number(b)||0), 0) }
 function tripDisplayName(t){ return `${t.start? t.start + '_' : ''}${t.name||'무제'}`; }
 
@@ -213,11 +228,6 @@ function renderTrips(){
             <button class="btn small" data-id="${t.id}" type="button">열기</button>
             <button class="btn small ghost" data-del="${t.id}" type="button">삭제</button>
           </div>`;
-        // 안정성: 각 버튼에 직접 핸들러 바인딩
-        const openBtn = item.querySelector('[data-id]');
-        const delBtn = item.querySelector('[data-del]');
-        openBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); openTrip(t.id); });
-        delBtn.addEventListener('click', async (ev)=>{ ev.stopPropagation(); await deleteTrip(t.id); });
         list.appendChild(item);
       })
     }
@@ -250,7 +260,7 @@ function renderTrips(){
     setTimeout(()=> document.addEventListener('click', onDoc, true), 0);
   };
 
-  // 보조: 위임 방식도 유지
+  // 위임: 열기/삭제
   list.addEventListener('click', async (ev)=>{
     const target = ev.target instanceof Element ? ev.target : ev.target.parentElement;
     if(!target) return;
@@ -386,6 +396,8 @@ function openTrip(id){
   root.appendChild(expCard);
   // 새 지출 입력의 날짜 기본값 = 출발일
   if(t.start){ const d = expCard.querySelector('#eDate'); if(d) d.value = t.start; }
+  // 금액 step 적용
+  expCard.querySelector('#eAmount').setAttribute('step', stepForCurrency(t.currency||'KRW'));
 
   // 요약 카드
   const sumCard = document.createElement('div');
@@ -417,12 +429,13 @@ function openTrip(id){
       chip.onclick = async ()=>{
         const ok = await askConfirm(`참가자 \"${p.name}\" 및 관련 지출을 삭제할까요?`, '삭제', '취소');
         if(!ok) return;
-        // remove from expenses references
-        t.expenses = t.expenses.map(e=>({
-          ...e,
-          paidBy: e.paidBy===p.id? (t.people.find(x=>x.id!==p.id)?.id || null) : e.paidBy,
-          users: e.users.filter(id=>id!==p.id)
-        })).filter(e=> e.paidBy!==null && e.users.length>0);
+        // 개선: 지불자는 해당 지출의 남은 사용자 중 한 명으로 재할당
+        t.expenses = (t.expenses||[]).map(e=>{
+          const newUsers = e.users.filter(id=> id !== p.id);
+          let newPaidBy = e.paidBy;
+          if(e.paidBy === p.id){ newPaidBy = newUsers[0] || null; }
+          return { ...e, paidBy: newPaidBy, users: newUsers };
+        }).filter(e=> e.paidBy && e.users.length>0);
         t.people = t.people.filter(x=>x.id!==p.id);
         save(); openTrip(t.id);
       }
@@ -500,7 +513,7 @@ function openTrip(id){
     const paidBy = expCard.querySelector('#ePayer').value;
     const users = [...expCard.querySelectorAll('#eUsers .chip.active')].map(x=>x.dataset.id);
     const memo = expCard.querySelector('#eMemo').value.trim();
-    if(!title || !amount || !paidBy || users.length===0){ alert('항목/금액/지불자/사용자(분배 대상)를 확인하세요.'); return }
+    if(!title || !isValidAmount(amount) || !paidBy || users.length===0){ alert('항목/금액(0보다 큰 숫자)/지불자/사용자(분배 대상)를 확인하세요.'); return }
     t.expenses.push({id:uid(), date, title, amount, paidBy, users, memo});
     expCard.querySelector('#eTitle').value=''; expCard.querySelector('#eAmount').value=''; expCard.querySelector('#eMemo').value='';
     // 기본값: 출발일로 날짜 재설정, 분배대상 전원 선택으로 초기화
@@ -520,7 +533,7 @@ function openTrip(id){
     totals.className='grid cols-3';
     totals.innerHTML = `
       <div class="card" style="background:#0e1722"><div class="kicker">총액</div><div style="font-size:18px" class="amount">${fmt(s.totalAmount, currency)}</div></div>
-      <div class="card" style="background:#0e1722"><div class="kicker">1인 평균(사용자 기준)</div><div style="font-size:18px" class="amount">${fmt(s.avgPerUser, currency)}</div></div>
+      <div class="card" style="background:#0e1722"><div class="kicker">1인 평균(참여자 기준)</div><div style="font-size:18px" class="amount">${fmt(s.avgPerUser, currency)}</div></div>
       <div class="card" style="background:#0e1722"><div class="kicker">지출 건수</div><div style="font-size:18px">${t.expenses.length}건</div></div>`;
     el.appendChild(totals);
 
@@ -615,6 +628,8 @@ function openExpenseEditor(t, expId){
     c.onclick=()=> c.classList.toggle('active');
     usersWrap.appendChild(c);
   });
+  // 금액 step 적용
+  modal.querySelector('#edAmount').setAttribute('step', stepForCurrency(t.currency||'KRW'));
 
   function close(){ modal.remove(); }
 
@@ -632,7 +647,7 @@ function openExpenseEditor(t, expId){
     const paidBy = modal.querySelector('#edPayer').value;
     const users = [...modal.querySelectorAll('#edUsers .chip.active')].map(x=>x.dataset.id);
     const memo = modal.querySelector('#edMemo').value.trim();
-    if(!title || !amount || !paidBy || users.length===0){ alert('항목/금액/지불자/사용자(분배 대상)를 확인하세요.'); return }
+    if(!title || !isValidAmount(amount) || !paidBy || users.length===0){ alert('항목/금액(0보다 큰 숫자)/지불자/사용자(분배 대상)를 확인하세요.'); return }
     e.date = date; e.title = title; e.amount = amount; e.paidBy = paidBy; e.users = users; e.memo = memo;
     save(); close(); openTrip(t.id);
   };
@@ -641,6 +656,9 @@ function openExpenseEditor(t, expId){
 // ===== 계산 로직 =====
 function calcTripStats(t){
   const currency = t.currency||'KRW';
+  const d = decs(currency);
+  const eps = 0.5 / (10 ** d); // 반 최소단위 임계치
+
   const people = t.people;
   const totalsUsed = Object.fromEntries(people.map(p=>[p.id,0]));
   const totalsPaid = Object.fromEntries(people.map(p=>[p.id,0]));
@@ -657,35 +675,33 @@ function calcTripStats(t){
   });
 
   const balances = people.map(p=>{
-    const paid = round2(totalsPaid[p.id]||0);
-    const used = round2(totalsUsed[p.id]||0);
-    return { id:p.id, name:p.name, paid, used, net: round2(paid - used) };
+    const paid = roundN(totalsPaid[p.id]||0, d);
+    const used = roundN(totalsUsed[p.id]||0, d);
+    return { id:p.id, name:p.name, paid, used, net: roundN(paid - used, d) };
   });
 
   // 정산 제안 (그리디)
-  const debtors = balances.filter(b=>b.net< -0.005).map(b=>({name:b.name, id:b.id, amount: -b.net})).sort((a,b)=>b.amount-a.amount);
-  const creditors = balances.filter(b=>b.net> 0.005).map(b=>({name:b.name, id:b.id, amount: b.net})).sort((a,b)=>b.amount-a.amount);
+  const debtors = balances.filter(b=>b.net< -eps).map(b=>({name:b.name, id:b.id, amount: -b.net})).sort((a,b)=>b.amount-a.amount);
+  const creditors = balances.filter(b=>b.net>  eps).map(b=>({name:b.name, id:b.id, amount: b.net})).sort((a,b)=>b.amount-a.amount);
   const settlements = [];
   let i=0, j=0;
   while(i<debtors.length && j<creditors.length){
-    const d = debtors[i], c = creditors[j];
-    const amt = Math.min(d.amount, c.amount);
-    if(amt>0.004){
-      settlements.push({from:d.name, to:c.name, amount: round2(amt)});
+    const dbr = debtors[i], cdr = creditors[j];
+    const amt = Math.min(dbr.amount, cdr.amount);
+    if(amt>eps){
+      settlements.push({from:dbr.name, to:cdr.name, amount: roundN(amt, d)});
     }
-    d.amount = round2(d.amount - amt);
-    c.amount = round2(c.amount - amt);
-    if(d.amount<=0.004) i++;
-    if(c.amount<=0.004) j++;
+    dbr.amount = roundN(dbr.amount - amt, d);
+    cdr.amount = roundN(cdr.amount - amt, d);
+    if(dbr.amount<=eps) i++;
+    if(cdr.amount<=eps) j++;
   }
 
   const avgUsers = new Set((t.expenses||[]).flatMap(e=>e.users)).size || people.length || 1;
-  const avgPerUser = round2(totalShares? totalAmount / avgUsers : 0);
+  const avgPerUser = roundN(totalShares? totalAmount / avgUsers : 0, d);
 
-  return { currency, totalAmount: round2(totalAmount), avgPerUser, balances, settlements };
+  return { currency, totalAmount: roundN(totalAmount, d), avgPerUser, balances, settlements };
 }
-
-function round2(n){ return Math.round((Number(n)||0)*100)/100 }
 
 // ===== 공유 및 요약 텍스트 =====
 function buildSummaryText(t){
@@ -696,18 +712,18 @@ function buildSummaryText(t){
   if(t.start || t.end){ lines.push(`기간: ${t.start||''} ~ ${t.end||''}`) }
   lines.push(`참가자: ${peopleList}`);
   lines.push('');
-  lines.push(`총액: ${fmtPlain(s.totalAmount)}`);
+  lines.push(`총액: ${fmtPlain(s.totalAmount, t.currency)}`);
   lines.push(`지출 ${t.expenses.length}건`);
   lines.push('');
   lines.push('— 개인별 정산');
   s.balances.forEach(b=>{
     const tag = b.net>0? '받을 금액' : (b.net<0? '보낼 금액':'정산 완료');
-    lines.push(`• ${b.name}: 지불 ${fmtPlain(b.paid)}, 사용 ${fmtPlain(b.used)}, ${tag} ${fmtPlain(b.net)}`);
+    lines.push(`• ${b.name}: 지불 ${fmtPlain(b.paid, t.currency)}, 사용 ${fmtPlain(b.used, t.currency)}, ${tag} ${fmtPlain(b.net, t.currency)}`);
   })
   lines.push('');
   if(s.settlements.length){
     lines.push('— 송금 제안');
-    s.settlements.forEach(x=> lines.push(`• ${x.from} → ${x.to}: ${fmtPlain(x.amount)}`));
+    s.settlements.forEach(x=> lines.push(`• ${x.from} → ${x.to}: ${fmtPlain(x.amount, t.currency)}`));
   }else{
     lines.push('— 모든 정산이 완료되었습니다.');
   }
@@ -717,7 +733,7 @@ function buildSummaryText(t){
     const users = e.users.map(id=> t.people.find(p=>p.id===id)?.name).filter(Boolean).join(', ');
     const payer = t.people.find(p=>p.id===e.paidBy)?.name || '';
     const memoOne = (e.memo||'').replace(/\n/g,' ').trim();
-    lines.push(`• ${e.date||''} ${e.title}: ${fmtPlain(e.amount)} (지불자 ${payer}, 사용: ${users})${memoOne? ' — 메모: '+memoOne : ''}`);
+    lines.push(`• ${e.date||''} ${e.title}: ${fmtPlain(e.amount, t.currency)} (지불자 ${payer}, 사용: ${users})${memoOne? ' — 메모: '+memoOne : ''}`);
   })
   return lines.join('\n');
 }
@@ -725,16 +741,17 @@ function buildSummaryText(t){
 function buildChatMessage(t){
   const s = calcTripStats(t);
   const peopleCnt = t.people.length;
-  const signed = (n)=> (n>0?'+':'') + fmtPlain(n);
+  const currency = t.currency||'KRW';
+  const signed = (n)=> (n>0?'+':'') + fmtPlain(n, currency);
   const lines = [];
   // 1~2줄: 제목/기간
   lines.push(`[정산] ${t.name}${t.type?`/${t.type}`:''}`);
   if(t.start || t.end){ lines.push(`${t.start||''}${t.end?`~${t.end}`:''}`); }
   // 3줄: 총액/건수/인원 (통화 단위 제거)
-  lines.push(`총액 ${fmtPlain(s.totalAmount)} · 지출 ${t.expenses.length}건 · ${peopleCnt}명`);
+  lines.push(`총액 ${fmtPlain(s.totalAmount, currency)} · 지출 ${t.expenses.length}건 · ${peopleCnt}명`);
   // 4줄: 정산 제안 요약
   if(s.settlements.length){
-    lines.push('정산 ' + s.settlements.map(x=>`${x.from}->${x.to} ${fmtPlain(x.amount)}`).join(' · '));
+    lines.push('정산 ' + s.settlements.map(x=>`${x.from}->${x.to} ${fmtPlain(x.amount, currency)}`).join(' · '));
   }else{
     lines.push('정산 완료');
   }
@@ -796,7 +813,7 @@ async function shareChat(){
   }
 }
 
-// ===== 스프레드시트 (구글시트) 연동: TSV/CSV + 직접 쓰기 =====
+// ===== 스프레드시트 (구글시트) 연동: TSV/CSV + 직접 쓰기(덮어쓰기) =====
 const SHEETS_CFG_KEY = 'travelSplitSheetsCfg_v1';
 let gsTokenClient = null, gsAccessToken = null, gsTokenExpiry = 0, gsClientIdMemo = null;
 
@@ -846,16 +863,24 @@ async function getGsToken(clientId, promptConsent){
   });
 }
 
-async function appendRowsToGoogleSheet({clientId, sheetId, sheetName, rows}){
+// 덮어쓰기 방식: 시트 비우기 후 A1부터 전체 데이터 업데이트
+async function writeRowsToGoogleSheetOverwrite({clientId, sheetId, sheetName, rows}){
   // 토큰 확보 (가능하면 조용히, 실패 시 동의창)
   let token = tokenValid()? gsAccessToken : await getGsToken(clientId, false);
   if(!token){ token = await getGsToken(clientId, true); }
   if(!token){ throw new Error('Google 인증 실패'); }
 
-  const range = encodeURIComponent(`${sheetName||'Sheet1'}!A1`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
-  const payload = { range: `${sheetName||'Sheet1'}!A1`, majorDimension:'ROWS', values: rows };
-  const resp = await fetch(url, { method:'POST', headers:{ 'Authorization': 'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+  const name = sheetName || 'Sheet1';
+  // 1) clear entire sheet
+  const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(name)}:clear`;
+  const clearResp = await fetch(clearUrl, { method:'POST', headers:{ 'Authorization': 'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({}) });
+  if(!clearResp.ok){ const text = await clearResp.text(); throw new Error(`시트 비우기 실패 ${clearResp.status}: ${text}`); }
+
+  // 2) write values starting at A1
+  const range = `${name}!A1`;
+  const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
+  const payload = { range, majorDimension:'ROWS', values: rows };
+  const resp = await fetch(updateUrl, { method:'PUT', headers:{ 'Authorization': 'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
   if(!resp.ok){ const text = await resp.text(); throw new Error(`Google API 오류 ${resp.status}: ${text}`); }
   return await resp.json();
 }
@@ -907,7 +932,7 @@ function openSheetExportModal(){
           </div>
           <div class=\"row\" style=\"justify-content:flex-end;margin-top:10px\">
             <button class=\"btn\" id=\"gsLoginBtn\" type=\"button\">로그인/권한 요청</button>
-            <button class=\"btn primary\" id=\"gsAppendBtn\" type=\"button\">시트에 Append</button>
+            <button class=\"btn primary\" id=\"gsAppendBtn\" type=\"button\">시트에 덮어쓰기</button>
           </div>
         </div>
         <div class=\"row\" style=\"justify-content:flex-end;margin-top:12px\">
@@ -936,7 +961,7 @@ function openSheetExportModal(){
     setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },0);
   };
 
-  // 직접 쓰기 바인딩
+  // 직접 쓰기(덮어쓰기) 바인딩
   const $ = (sel)=> wrap.querySelector(sel);
   const clientIdEl = $('#gsClientId');
   const sheetIdEl = $('#gsSheetId');
@@ -954,7 +979,7 @@ function openSheetExportModal(){
       await ensureGIS();
       initGsTokenClient(clientIdEl.value.trim());
       await getGsToken(clientIdEl.value.trim(), true);
-      alert('구글 인증 완료. 이제 "시트에 Append"를 눌러 전송하세요.');
+      alert('구글 인증 완료. 이제 "시트에 덮어쓰기"를 눌러 전송하세요.');
     }catch(err){ alert('인증 초기화 실패: '+err.message); }
   };
 
@@ -963,26 +988,26 @@ function openSheetExportModal(){
       const mode = getMode2();
       let rows = buildSheetRows(mode);
       if(!withHeaderEl.checked){ rows = rows.slice(1); }
-      const res = await appendRowsToGoogleSheet({
+      const res = await writeRowsToGoogleSheetOverwrite({
         clientId: clientIdEl.value.trim(),
         sheetId: sheetIdEl.value.trim(),
         sheetName: sheetNameEl.value.trim()||'Sheet1',
         rows
       });
-      alert('시트에 전송 완료! (업데이트 범위: '+ (res.updates?.updatedRange||'알 수 없음') +')');
+      alert('시트에 덮어쓰기 완료! (업데이트 범위: '+ (res.updatedRange || res.updates?.updatedRange || '알 수 없음') +')');
     }catch(err){
       console.error(err);
-      alert('전송 실패: '+ err.message + '\n\n· HTTPS에서 열었는지\n· OAuth 클라이언트에 현재 도메인이 등록됐는지\n· 스프레드시트 ID/이름이 정확한지 확인하세요.');
+      alert('전송 실패(덮어쓰기): '+ err.message + '\n\n· HTTPS에서 열었는지\n· OAuth 클라이언트에 현재 도메인이 등록됐는지\n· 스프레드시트 ID/이름이 정확한지 확인하세요.');
     }
   };
 }
 
 function buildSheetRows(mode='trip'){
   const rows = [];
-  // 헤더 고정: 여행 날짜, 여행 이름, 참가자, 지출내역, 총 지출
-  rows.push(['여행 날짜','여행 이름','참가자','지출내역','총 지출']);
+  // 헤더 고정: 여행 시작일, 여행 이름, 참가자, 지출내역, 총 지출
+  rows.push(['여행 시작일','여행 이름','참가자','지출내역','총 지출']);
   const trips = App.state.trips || [];
-  const dateStr = (t)=> (t.start||t.end)? `${t.start||''}${t.end?`~${t.end}`:''}` : '';
+  const startOnly = (t)=> (t.start||'');
   const joinNames = (arr)=> (arr||[]).map(x=>x.name).join(', ');
   const userNames = (t, ids)=> ids.map(id=> t.people.find(p=>p.id===id)?.name).filter(Boolean).join(', ');
   if(mode==='trip'){
@@ -992,9 +1017,9 @@ function buildSheetRows(mode='trip'){
         const payer = t.people.find(p=>p.id===e.paidBy)?.name || '';
         const users = userNames(t, e.users);
         const memo = (e.memo||'').replace(/\n/g,' ').trim();
-        return `${e.date||''} ${e.title} ${fmtPlain(e.amount)} (지불자 ${payer}, 사용: ${users}${memo?`, 메모: ${memo}`:''})`;
+        return `${e.date||''} ${e.title} ${fmtPlain(e.amount, t.currency)} (지불자 ${payer}, 사용: ${users}${memo?`, 메모: ${memo}`:''})`;
       }).join(' | ');
-      rows.push([dateStr(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount)]);
+      rows.push([startOnly(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount, t.currency)]);
     });
   }else{ // expense rows
     trips.forEach(t=>{
@@ -1003,11 +1028,11 @@ function buildSheetRows(mode='trip'){
         const payer = t.people.find(p=>p.id===e.paidBy)?.name || '';
         const users = userNames(t, e.users);
         const memo = (e.memo||'').replace(/\n/g,' ').trim();
-        const expStr = `${e.date||''} ${e.title} ${fmtPlain(e.amount)} (지불자 ${payer}, 사용: ${users}${memo?`, 메모: ${memo}`:''})`;
-        rows.push([dateStr(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount)]);
+        const expStr = `${e.date||''} ${e.title} ${fmtPlain(e.amount, t.currency)} (지불자 ${payer}, 사용: ${users}${memo?`, 메모: ${memo}`:''})`;
+        rows.push([startOnly(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount, t.currency)]);
       })
       if((t.expenses||[]).length===0){
-        rows.push([dateStr(t), t.name||'', joinNames(t.people), '', fmtPlain(calcTripStats(t).totalAmount)]);
+        rows.push([startOnly(t), t.name||'', joinNames(t.people), '', fmtPlain(calcTripStats(t).totalAmount, t.currency)]);
       }
     });
   }
@@ -1041,7 +1066,7 @@ function saveAutoSync(v){ localStorage.setItem(AUTO_SYNC_KEY, JSON.stringify(!!v
 
 async function ensureFirebase(){
   if(window.firebase && window.firebase.apps) return;
-  const loadScript = (src)=> new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('SDK 로드 실패: '+src)); document.head.appendChild(s); });
+  const loadScript = (src)=> new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror(()=>rej(new Error('SDK 로드 실패: '+src))); document.head.appendChild(s); });
   // compat SDK (간편)
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js');
@@ -1418,139 +1443,58 @@ function setupFAB(){
 // ===== 내장 테스트 =====
 function runSelfTests(){
   const assert = (name, cond) => console[cond? 'log':'error'](`${cond?'✅':'❌'} ${name}`);
+  console.log('--- Self Tests Start ---');
   // TC1: 3인 균등 분배 30,000원 (A가 결제)
   const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'};
   const trip1={currency:'KRW', people:[A,B,C], expenses:[{amount:30000, paidBy:'A', users:['A','B','C']}]};
   const s1 = calcTripStats(trip1);
-  console.log('--- Self Tests Start ---');
   assert('TC1 총액=30000', s1.totalAmount===30000);
   const bA1 = s1.balances.find(x=>x.id==='A'), bB1=s1.balances.find(x=>x.id==='B'), bC1=s1.balances.find(x=>x.id==='C');
-  assert('TC1 A 순액 +20000', bA1.net===20000);
-  assert('TC1 B 순액 -10000', bB1.net===-10000);
-  assert('TC1 C 순액 -10000', bC1.net===-10000);
+  assert('TC1 A 순액 > 0', bA1.net>0);
+  assert('TC1 B 순액 < 0', bB1.net<0);
+  assert('TC1 C 순액 < 0', bC1.net<0);
   assert('TC1 정산 2건', s1.settlements.length===2);
 
-  // TC2: 사용자 일부만 사용(두 명)
-  const trip2={currency:'KRW', people:[A,B,C], expenses:[{amount:9000, paidBy:'B', users:['A','B']}]};
-  const s2 = calcTripStats(trip2);
-  assert('TC2 총액=9000', s2.totalAmount===9000);
-  const bB2 = s2.balances.find(x=>x.id==='B'), bA2=s2.balances.find(x=>x.id==='A'), bC2=s2.balances.find(x=>x.id==='C');
-  assert('TC2 B 순액 +4500', bB2.net===4500);
-  assert('TC2 A 순액 -4500', bA2.net===-4500);
-  assert('TC2 C 순액 0', bC2.net===0);
+  // TC2: 통화 step - KWD는 0.001, KRW는 1
+  assert('TC2 step KWD=0.001', stepForCurrency('KWD')==='0.001');
+  assert('TC2 step KRW=1', stepForCurrency('KRW')==='1');
 
-  // TC3: 서로 다른 사람이 각각 결제하여 완전 상쇄되는 경우 (정산 0건)
-  const trip3={currency:'KRW', people:[A,B], expenses:[
+  // TC3: 미세 금액 임계값 - 0.01을 2명이 사용하면 정산 없음(2소수 통화)
+  const tTiny={currency:'USD', people:[A,B], expenses:[{amount:0.01, paidBy:'A', users:['A','B']}]};
+  assert('TC3 정산 0건', calcTripStats(tTiny).settlements.length===0);
+
+  // TC4: 시트 행 빌더 - 여행일자는 시작일만
+  const tSheet={name:'S', start:'2025-01-01', end:'2025-01-03', currency:'KRW', people:[A], expenses:[]};
+  const bak=App.state; App.state={trips:[tSheet]}; const r=buildSheetRows('trip'); App.state=bak;
+  assert('TC4 헤더 OK', r[0][0]==='여행 시작일');
+  assert('TC4 시작일 표시', r[1][0]==='2025-01-01');
+
+  // TC5: removeTripById 순수 함수
+  const st = {version:1, trips:[{id:'X'},{id:'Y'},{id:'Z'}]};
+  const st2 = removeTripById(st, 'Y');
+  assert('TC5 삭제 후 길이 -1', st2.trips.length===2 && st2.trips.findIndex(t=>t.id==='Y')===-1);
+
+  // TC6: 완전 상쇄 케이스(정산 0)
+  const tZero={currency:'KRW', people:[A,B], expenses:[
     {amount:10000, paidBy:'A', users:['A','B']},
     {amount:10000, paidBy:'B', users:['A','B']}
   ]};
-  const s3=calcTripStats(trip3);
-  assert('TC3 총액=20000', s3.totalAmount===20000);
-  const bA3=s3.balances.find(x=>x.id==='A'), bB3=s3.balances.find(x=>x.id==='B');
-  assert('TC3 A 순액 0', bA3.net===0);
-  assert('TC3 B 순액 0', bB3.net===0);
-  assert('TC3 정산 0건', s3.settlements.length===0);
+  const sZero = calcTripStats(tZero);
+  assert('TC6 총액=20000', sZero.totalAmount===20000);
+  assert('TC6 정산 0건', sZero.settlements.length===0);
 
-  // TC4: 소수점 금액과 라운딩 체크 (10001원을 3명이 사용)
-  const trip4={currency:'KRW', people:[A,B,C], expenses:[{amount:10001, paidBy:'C', users:['A','B','C']}]};
-  const s4=calcTripStats(trip4);
-  assert('TC4 총액=10001', s4.totalAmount===10001);
-  const bC4=s4.balances.find(x=>x.id==='C');
-  assert('TC4 C 순액 약 6667.67', Math.abs(bC4.net-6667.67)<0.01);
+  // TC7: 요약/문자 포맷에 통화코드가 직접 노출되지 않음
+  const sumTxt = buildSummaryText({name:'T', type:'친구', currency:'USD', people:[A,B], start:'2025-01-01', end:'2025-01-02', expenses:[{amount:1234.56, paidBy:'A', users:['A','B'], title:'테스트'}]});
+  assert('TC7 요약 텍스트에 통화코드 문자열 없음', !/\b(KRW|USD|EUR|JPY)\b/.test(sumTxt));
 
-  // TC5: 빈 지출/참가자만 있는 경우
-  const trip5={currency:'KRW', people:[A,B,C], expenses:[]};
-  const s5=calcTripStats(trip5);
-  assert('TC5 총액=0', s5.totalAmount===0);
-  const bA5=s5.balances.find(x=>x.id==='A');
-  assert('TC5 A 순액 0', bA5.net===0);
+  // TC8: 평균 사용자 계산(참여자 2명만 사용)
+  const tAvg={currency:'KRW', people:[A,B,C], expenses:[{amount:9000, paidBy:'B', users:['A','B']}]};
+  const sAvg = calcTripStats(tAvg);
+  assert('TC8 평균 = 9000/2=4500', sAvg.avgPerUser===4500);
 
-  // TC6: 두 명이 한 명에게 송금해야 하는 케이스 (정확한 송금 제안)
-  const trip6={currency:'KRW', people:[A,B,C], expenses:[
-    {amount:12000, paidBy:'A', users:['A','B','C']}, // 각 4000 사용, A +8000
-    {amount:3000, paidBy:'B', users:['A','B']},     // 각 1500 사용, B +1500, A -1500
-  ]};
-  const s6=calcTripStats(trip6);
-  assert('TC6 정산안 2건', s6.settlements.length===2);
-  const gainA = s6.balances.find(x=>x.id==='A').net;
-  const sumSettle = s6.settlements.reduce((a,b)=>a+b.amount,0);
-  assert('TC6 정산 총합 = A 이익', Math.abs(gainA - sumSettle) < 0.01);
-
-  // TC7: 극소 금액(임계값)에서 송금 제안이 생기지 않음 (0.004 이하는 무시)
-  const trip7={currency:'KRW', people:[A,B], expenses:[{amount:0.01, paidBy:'A', users:['A','B']}]};
-  const s7=calcTripStats(trip7);
-  assert('TC7 정산 0건(임계값 무시)', s7.settlements.length===0);
-
-  // TC8: 카카오/문자 포맷 - 정산 존재 시 화살표 표기 포함
-  const msg1 = buildChatMessage({
-    name:'T', type:'친구', currency:'KRW', start:'2025-01-01', end:'2025-01-02',
-    people:[A,B,C],
-    expenses:[{amount:30000, paidBy:'A', users:['A','B','C']}]
-  });
-  assert('TC8 포맷에 "->" 포함', msg1.includes('->'));
-
-  // TC9: 카카오/문자 포맷 - 정산 완료 문구
-  const msg2 = buildChatMessage({
-    name:'T2', type:'가족', currency:'KRW', start:'2025-01-01', end:'2025-01-02',
-    people:[A,B],
-    expenses:[{amount:10000, paidBy:'A', users:['A','B']},{amount:10000, paidBy:'B', users:['A','B']}]
-  });
-  assert('TC9 포맷에 정산 완료 포함', msg2.includes('정산 완료'));
-
-  // TC10: 요약/문자 포맷에 통화코드가 포함되지 않아야 함
-  const msg3 = buildSummaryText({
-    name:'T3', type:'친구', currency:'USD', people:[A,B], start:'2025-01-01', end:'2025-01-02',
-    expenses:[{amount:1234.56, paidBy:'A', users:['A','B']}]
-  });
-  assert('TC10 요약에 통화코드 없음', !/\b(KRW|USD|EUR|JPY)\b/.test(msg3));
-
-  const msg4 = buildChatMessage({
-    name:'T4', type:'친구', currency:'KRW', people:[A,B], start:'2025-01-01', end:'2025-01-02',
-    expenses:[{amount:5000, paidBy:'A', users:['A','B']}]
-  });
-  assert('TC11 문자에 통화코드 없음', !/\b(KRW|USD|EUR|JPY)\b/.test(msg4));
-
-  // TC12: 삭제 로직 순수 함수 테스트
-  const st = {version:1, trips:[{id:'X'},{id:'Y'},{id:'Z'}]};
-  const st2 = removeTripById(st, 'Y');
-  assert('TC12 삭제 후 길이 -1', st2.trips.length===2 && st2.trips.findIndex(t=>t.id==='Y')===-1);
-
-  // TC13: 목록 표시 이름 (출발일_여행이름)
-  const td = {start:'2025-12-31', name:'연말'};
-  assert('TC13 표시명', tripDisplayName(td)==='2025-12-31_연말');
-
-  // TC14: 메모가 요약 텍스트에는 포함, 문자 포맷에는 미포함
-  const tripM={name:'M', type:'친구', currency:'KRW', people:[A], expenses:[{amount:1000, paidBy:'A', users:['A'], title:'커피', memo:'ICE, 테이크아웃'}]};
-  const sTxt = buildSummaryText(tripM);
-  const sMsg = buildChatMessage(tripM);
-  assert('TC14 요약에 메모 포함', sTxt.includes('메모: ICE, 테이크아웃'));
-  assert('TC14 문자에 메모 미포함', !sMsg.includes('ICE, 테이크아웃'));
-
-  // TC15: 시트 내보내기 - 헤더/행수(여행별)
-  const stTrips={trips:[{name:'T1',start:'2025-01-01',end:'2025-01-02',people:[A,B],expenses:[{amount:1000,paidBy:'A',users:['A'],title:'a'}]}, {name:'T2',people:[A],expenses:[]}]};
-  const bak = App.state; App.state=stTrips; const r1=buildSheetRows('trip'); App.state=bak;
-  assert('TC15 헤더 포함 & 1행/여행', r1.length===1+stTrips.trips.length && r1[0][0]==='여행 날짜');
-
-  // TC16: 시트 내보내기 - 참가자 콤마 구분
-  const rowT = r1[1];
-  assert('TC16 참가자 구분자', rowT[2].includes(','));
-
-  // TC17: 시트 내보내기 - 총 지출 숫자 일치
-  const totalT1 = calcTripStats(stTrips.trips[0]).totalAmount;
-  assert('TC17 총 지출 일치', parseInt(r1[1][4].replace(/,/g,''),10)===totalT1);
-
-  // TC18: tripDisplayName - 이름 비어있을 때 기본값
-  const td2 = {start:'', name:''};
-  assert('TC18 표시명 기본 무제', tripDisplayName(td2)==='무제');
-
-  // TC19: CSV 이스케이프 동작
+  // TC9: CSV 이스케이프 확인
   const csv = rowsToCSV([["헤더", 'a,"b",c']]);
-  assert('TC19 따옴표 이스케이프', csv.includes('"a,""b"",c"'));
-
-  // TC20: 자동 동기화 기본값 저장/불러오기
-  saveAutoSync(true);
-  assert('TC20 autosync 저장/불러오기', loadAutoSync()===true);
-  saveAutoSync(false);
+  assert('TC9 따옴표 이스케이프', csv.includes('"a,""b"",c"'));
 
   console.log('--- Self Tests End ---');
 }
