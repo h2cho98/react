@@ -114,6 +114,7 @@ const App = {
 
 // --- Firestore 클라우드 동기화 상태 ---
 const FIRE_CFG_KEY = 'travelSplitFirebaseCfg_v1';
+const AUTO_SYNC_KEY = 'travelSplitAutoSync_v1';
 const Cloud = {
   cfg: null,
   app: null, db: null, auth: null,
@@ -212,7 +213,7 @@ function renderTrips(){
             <button class="btn small" data-id="${t.id}" type="button">열기</button>
             <button class="btn small ghost" data-del="${t.id}" type="button">삭제</button>
           </div>`;
-        // 안정성: 각 버튼에 직접 핸들러 바인딩 (일부 환경 confirm 차단 대응)
+        // 안정성: 각 버튼에 직접 핸들러 바인딩
         const openBtn = item.querySelector('[data-id]');
         const delBtn = item.querySelector('[data-del]');
         openBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); openTrip(t.id); });
@@ -249,7 +250,7 @@ function renderTrips(){
     setTimeout(()=> document.addEventListener('click', onDoc, true), 0);
   };
 
-  // 보조: 위임 방식도 유지(텍스트 노드 타깃 대비)
+  // 보조: 위임 방식도 유지
   list.addEventListener('click', async (ev)=>{
     const target = ev.target instanceof Element ? ev.target : ev.target.parentElement;
     if(!target) return;
@@ -752,7 +753,7 @@ async function copySummary(){
     // fallback: 수동 복사 모달
     const modal = document.createElement('div');
     modal.className='modal-backdrop';
-    modal.innerHTML = `<div class="modal"><div class="card"><h3>복사 실패</h3><div class="hint">아래 내용을 길게 눌러 복사해주세요.</div><textarea style="width:100%;height:220px;margin-top:8px">${escapeHTML(text)}</textarea><div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn" id="closeCopy" type="button">닫기</button></div></div></div>`;
+    modal.innerHTML = `<div class=\"modal\"><div class=\"card\"><h3>복사 실패</h3><div class=\"hint\">아래 내용을 길게 눌러 복사해주세요.</div><textarea style=\"width:100%;height:220px;margin-top:8px\">${escapeHTML(text)}</textarea><div class=\"row\" style=\"justify-content:flex-end;margin-top:8px\"><button class=\"btn\" id=\"closeCopy\" type=\"button\">닫기</button></div></div></div>`;
     document.body.appendChild(modal);
     modal.querySelector('#closeCopy').onclick = ()=> modal.remove();
   }
@@ -767,7 +768,7 @@ async function copyChatMessage(){
   }catch(e){
     const modal = document.createElement('div');
     modal.className='modal-backdrop';
-    modal.innerHTML = `<div class="modal"><div class="card"><h3>복사 실패</h3><div class="hint">아래 내용을 길게 눌러 복사해주세요.</div><textarea style="width:100%;height:220px;margin-top:8px">${escapeHTML(text)}</textarea><div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn" id="closeCopy2" type="button">닫기</button></div></div></div>`;
+    modal.innerHTML = `<div class=\"modal\"><div class=\"card\"><h3>복사 실패</h3><div class=\"hint\">아래 내용을 길게 눌러 복사해주세요.</div><textarea style=\"width:100%;height:220px;margin-top:8px\">${escapeHTML(text)}</textarea><div class=\"row\" style=\"justify-content:flex-end;margin-top:8px\"><button class=\"btn\" id=\"closeCopy2\" type=\"button\">닫기</button></div></div></div>`;
     document.body.appendChild(modal);
     modal.querySelector('#closeCopy2').onclick = ()=> modal.remove();
   }
@@ -864,53 +865,53 @@ function openSheetExportModal(){
   wrap.className='modal-backdrop';
   const cfg = loadSheetsCfg();
   wrap.innerHTML = `
-    <div class="modal">
-      <div class="card">
+    <div class=\"modal\">
+      <div class=\"card\">
         <h3>구글시트 연동</h3>
-        <div class="kicker">아래 두 가지 방식 중 선택하세요.</div>
-        <div class="divider"></div>
+        <div class=\"kicker\">아래 두 가지 방식 중 선택하세요.</div>
+        <div class=\"divider\"></div>
         <div>
-          <h4 style="margin:0 0 8px">① 복사/다운로드 후 붙여넣기</h4>
+          <h4 style=\"margin:0 0 8px\">① 복사/다운로드 후 붙여넣기</h4>
           <label>행 구성</label>
-          <div class="row">
-            <label class="chip"><input type="radio" name="sheetMode" value="trip" checked style="margin-right:6px"> 여행별 1행</label>
-            <label class="chip"><input type="radio" name="sheetMode" value="expense" style="margin-right:6px"> 지출별 여러행</label>
+          <div class=\"row\">
+            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode\" value=\"trip\" checked style=\"margin-right:6px\"> 여행별 1행</label>
+            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode\" value=\"expense\" style=\"margin-right:6px\"> 지출별 여러행</label>
           </div>
-          <div class="row" style="justify-content:flex-end;margin-top:10px">
-            <button class="btn" id="shCopyTSV" type="button">TSV 복사(구글시트용)</button>
-            <button class="btn" id="shDownloadCSV" type="button">CSV 다운로드</button>
+          <div class=\"row\" style=\"justify-content:flex-end;margin-top:10px\">
+            <button class=\"btn\" id=\"shCopyTSV\" type=\"button\">TSV 복사(구글시트용)</button>
+            <button class=\"btn\" id=\"shDownloadCSV\" type=\"button\">CSV 다운로드</button>
           </div>
         </div>
-        <div class="divider"></div>
+        <div class=\"divider\"></div>
         <div>
-          <h4 style="margin:0 0 8px">② 직접 쓰기(베타 · OAuth 필요)</h4>
-          <div class="hint" style="margin:6px 0">HTTPS로 호스팅된 주소에서만 동작합니다(파일 직접 열기 X). 구글 클라우드 콘솔의 OAuth 2.0 클라이언트에 현재 URL을 <b>승인된 JavaScript 원본</b>으로 등록해야 합니다.</div>
-          <div class="grid cols-3">
+          <h4 style=\"margin:0 0 8px\">② 직접 쓰기(베타 · OAuth 필요)</h4>
+          <div class=\"hint\" style=\"margin:6px 0\">HTTPS로 호스팅된 주소에서만 동작합니다(파일 직접 열기 X). 구글 클라우드 콘솔의 OAuth 2.0 클라이언트에 현재 URL을 <b>승인된 JavaScript 원본</b>으로 등록해야 합니다.</div>
+          <div class=\"grid cols-3\">
             <div>
               <label>OAuth 클라이언트 ID</label>
-              <input id="gsClientId" placeholder="...apps.googleusercontent.com" value="${escapeAttr(cfg.clientId||'')}" />
+              <input id=\"gsClientId\" placeholder=\"...apps.googleusercontent.com\" value=\"${escapeAttr(cfg.clientId||'')}\" />
             </div>
             <div>
               <label>스프레드시트 ID</label>
-              <input id="gsSheetId" placeholder="시트 URL의 /d/ 와 /edit 사이" value="${escapeAttr(cfg.sheetId||'')}" />
+              <input id=\"gsSheetId\" placeholder=\"시트 URL의 /d/ 와 /edit 사이\" value=\"${escapeAttr(cfg.sheetId||'')}\" />
             </div>
             <div>
               <label>시트 이름</label>
-              <input id="gsSheetName" placeholder="Sheet1" value="${escapeAttr(cfg.sheetName||'Sheet1')}" />
+              <input id=\"gsSheetName\" placeholder=\"Sheet1\" value=\"${escapeAttr(cfg.sheetName||'Sheet1')}\" />
             </div>
           </div>
-          <div class="row" style="margin-top:8px">
-            <label class="chip"><input type="radio" name="sheetMode2" value="trip" checked> 여행별 1행</label>
-            <label class="chip"><input type="radio" name="sheetMode2" value="expense"> 지출별 여러행</label>
-            <label class="chip"><input type="checkbox" id="gsWithHeader" checked> 헤더 포함</label>
+          <div class=\"row\" style=\"margin-top:8px\">
+            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode2\" value=\"trip\" checked> 여행별 1행</label>
+            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode2\" value=\"expense\"> 지출별 여러행</label>
+            <label class=\"chip\"><input type=\"checkbox\" id=\"gsWithHeader\" checked> 헤더 포함</label>
           </div>
-          <div class="row" style="justify-content:flex-end;margin-top:10px">
-            <button class="btn" id="gsLoginBtn" type="button">로그인/권한 요청</button>
-            <button class="btn primary" id="gsAppendBtn" type="button">시트에 Append</button>
+          <div class=\"row\" style=\"justify-content:flex-end;margin-top:10px\">
+            <button class=\"btn\" id=\"gsLoginBtn\" type=\"button\">로그인/권한 요청</button>
+            <button class=\"btn primary\" id=\"gsAppendBtn\" type=\"button\">시트에 Append</button>
           </div>
         </div>
-        <div class="row" style="justify-content:flex-end;margin-top:12px">
-          <button class="btn ghost" id="shClose" type="button">닫기</button>
+        <div class=\"row\" style=\"justify-content:flex-end;margin-top:12px\">
+          <button class=\"btn ghost\" id=\"shClose\" type=\"button\">닫기</button>
         </div>
       </div>
     </div>`;
@@ -1027,7 +1028,7 @@ function rowsToCSV(rows){
 function showCopyFallback(text){
   const modal = document.createElement('div');
   modal.className='modal-backdrop';
-  modal.innerHTML = `<div class="modal"><div class="card"><h3>복사 실패</h3><div class="hint">아래 내용을 선택해 복사하세요.</div><textarea style="width:100%;height:220px;margin-top:8px">${escapeHTML(text)}</textarea><div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn" id="closeSheetCopy" type="button">닫기</button></div></div></div>`;
+  modal.innerHTML = `<div class=\"modal\"><div class=\"card\"><h3>복사 실패</h3><div class=\"hint\">아래 내용을 선택해 복사하세요.</div><textarea style=\"width:100%;height:220px;margin-top:8px\">${escapeHTML(text)}</textarea><div class=\"row\" style=\"justify-content:flex-end;margin-top:8px\"><button class=\"btn\" id=\"closeSheetCopy\" type=\"button\">닫기</button></div></div></div>`;
   document.body.appendChild(modal);
   modal.querySelector('#closeSheetCopy').onclick = ()=> modal.remove();
 }
@@ -1035,6 +1036,8 @@ function showCopyFallback(text){
 // ===== Firestore 동기화 =====
 function loadFirebaseCfg(){ try{ return JSON.parse(localStorage.getItem(FIRE_CFG_KEY))||{} }catch(e){ return {} } }
 function saveFirebaseCfg(cfg){ localStorage.setItem(FIRE_CFG_KEY, JSON.stringify(cfg||{})); }
+function loadAutoSync(){ try{ return JSON.parse(localStorage.getItem(AUTO_SYNC_KEY)||'false')===true }catch(e){ return false } }
+function saveAutoSync(v){ localStorage.setItem(AUTO_SYNC_KEY, JSON.stringify(!!v)); }
 
 async function ensureFirebase(){
   if(window.firebase && window.firebase.apps) return;
@@ -1052,6 +1055,7 @@ async function initFirebase(cfg){
   if(!firebase.apps.length){ firebase.initializeApp(cfg); }
   Cloud.db = firebase.firestore();
   Cloud.auth = firebase.auth();
+  try{ Cloud.auth.onAuthStateChanged(u=>{ Cloud.user=u||null; updateSafeNote(); if(Cloud.user && Cloud.autoSync){ startRealtime(true); } }); }catch(_){ }
   try{ await Cloud.db.enablePersistence({synchronizeTabs:true}); }catch(e){ /* 이미 활성/불가 시 무시 */ }
 }
 
@@ -1129,6 +1133,11 @@ function scheduleCloudPush(){
   clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(()=>{ cloudSaveNow().catch(console.error); }, 800);
 }
+function flushCloudPush(){
+  if(Cloud.suppressPush || !Cloud.autoSync) return;
+  if(cloudPushTimer){ clearTimeout(cloudPushTimer); cloudPushTimer=null; }
+  if(Cloud.db && Cloud.auth) cloudSaveNow().catch(console.error);
+}
 
 function startRealtime(on){
   if(Cloud.unsub){ Cloud.unsub(); Cloud.unsub=null; }
@@ -1158,7 +1167,7 @@ function userLabel(){
 function updateSafeNote(){
   const el = document.getElementById('safeNote');
   if(!el) return;
-  if(Cloud.user){ el.textContent = `클라우드 동기화 활성 — 사용자: ${userLabel()} (Firestore)`; }
+  if(Cloud.user){ el.textContent = `클라우드 동기화 활성 — 사용자: ${userLabel()} (Firestore${Cloud.autoSync?', 자동':''})`; }
   else{ el.textContent = '데이터는 이 기기(LocalStorage)에만 저장됩니다.'; }
 }
 
@@ -1167,31 +1176,33 @@ function openCloudModal(){
   const wrap = document.createElement('div');
   wrap.className='modal-backdrop';
   wrap.innerHTML = `
-    <div class="modal">
-      <div class="card">
+    <div class=\"modal\">
+      <div class=\"card\">
         <h3>클라우드 동기화 (Firebase Firestore)</h3>
-        <div class="hint" style="margin:6px 0 10px">GitHub Pages 같은 HTTPS 도메인에서 동작합니다. Firebase 콘솔에서 Firestore 생성 및 <b>인증</b>을 설정하세요. (익명 또는 Google 로그인)</div>
-        <div class="grid cols-3">
-          <div><label>apiKey</label><input id="fbApiKey" placeholder="apiKey" value="${escapeAttr(cfg.apiKey||'')}" /></div>
-          <div><label>authDomain</label><input id="fbAuthDomain" placeholder="example.firebaseapp.com" value="${escapeAttr(cfg.authDomain||'')}" /></div>
-          <div><label>projectId</label><input id="fbProjectId" placeholder="your-project" value="${escapeAttr(cfg.projectId||'')}" /></div>
+        <div class=\"hint\" style=\"margin:6px 0 10px\">GitHub Pages 같은 HTTPS 도메인에서 동작합니다. Firebase 콘솔에서 Firestore 생성 및 <b>인증</b>을 설정하세요. (익명 또는 Google 로그인)</div>
+        <div class=\"grid cols-3\">
+          <div><label>apiKey</label><input id=\"fbApiKey\" placeholder=\"apiKey\" value=\"${escapeAttr(cfg.apiKey||'')}\" /></div>
+          <div><label>authDomain</label><input id=\"fbAuthDomain\" placeholder=\"example.firebaseapp.com\" value=\"${escapeAttr(cfg.authDomain||'')}\" /></div>
+          <div><label>projectId</label><input id=\"fbProjectId\" placeholder=\"your-project\" value=\"${escapeAttr(cfg.projectId||'')}\" /></div>
         </div>
-        <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap">
-          <button class="btn" id="fbInit" type="button">연결</button>
-          <button class="btn" id="fbLogin" type="button">익명 로그인</button>
-          <button class="btn" id="fbGoogle" type="button">Google 로그인</button>
-          <button class="btn ghost" id="fbLink" type="button">익명→Google 연결(데이터 유지)</button>
-          <button class="btn ghost" id="fbLogout" type="button">로그아웃</button>
-          <span class="kicker" id="fbStatus">상태: 초기화 전</span>
+        <div class=\"row\" style=\"margin-top:8px; gap:8px; flex-wrap:wrap\">
+          <button class=\"btn\" id=\"fbInit\" type=\"button\">연결</button>
+          <button class=\"btn\" id=\"fbLogin\" type=\"button\">익명 로그인</button>
+          <button class=\"btn\" id=\"fbGoogle\" type=\"button\">Google 로그인</button>
+          <button class=\"btn ghost\" id=\"fbLink\" type=\"button\">익명→Google 연결(데이터 유지)</button>
+          <button class=\"btn ghost\" id=\"fbLogout\" type=\"button\">로그아웃</button>
+          <span class=\"kicker\" id=\"fbStatus\">상태: 초기화 전</span>
+          <button class=\"btn ghost\" id=\"fbRules\" type=\"button\">규칙 가이드</button>
+          <button class=\"btn ghost\" id=\"fbDiag\" type=\"button\">권한 진단</button>
         </div>
-        <div class="divider"></div>
-        <div class="row">
-          <label class="chip"><input type="checkbox" id="autoSync"> 자동 동기화(실시간)</label>
-          <button class="btn" id="fbPull" type="button">클라우드 불러오기</button>
-          <button class="btn primary" id="fbPush" type="button">클라우드 저장</button>
+        <div class=\"divider\"></div>
+        <div class=\"row\">
+          <label class=\"chip\"><input type=\"checkbox\" id=\"autoSync\"> 자동 동기화(실시간)</label>
+          <button class=\"btn\" id=\"fbPull\" type=\"button\">클라우드 불러오기</button>
+          <button class=\"btn primary\" id=\"fbPush\" type=\"button\">클라우드 저장</button>
         </div>
-        <div class="row" style="justify-content:flex-end;margin-top:12px">
-          <button class="btn ghost" id="cloudClose" type="button">닫기</button>
+        <div class=\"row\" style=\"justify-content:flex-end;margin-top:12px\">
+          <button class=\"btn ghost\" id=\"cloudClose\" type=\"button\">닫기</button>
         </div>
       </div>
     </div>`;
@@ -1257,11 +1268,11 @@ function openCloudModal(){
 
   $('#fbPush').onclick = async ()=>{
     try{ await cloudSaveNow(); setStatus('저장 완료'); alert('클라우드에 저장했습니다.'); }
-    catch(e){ alert('저장 실패: '+e.message); }
+    catch(e){ alert('저장 실패: '+e.message+'\n\n대부분은 Firestore 규칙 문제입니다. "규칙 가이드"를 확인하세요.'); }
   };
   $('#fbPull').onclick = async ()=>{
     try{ await cloudLoadNow(); setStatus('불러오기 완료'); }
-    catch(e){ alert('불러오기 실패: '+e.message); }
+    catch(e){ alert('불러오기 실패: '+e.message+'\n\n권한 문제일 수 있어요. "권한 진단"으로 확인하세요.'); }
   };
 
   autoEl.checked = Cloud.autoSync; // 이전 상태 반영
@@ -1269,11 +1280,45 @@ function openCloudModal(){
     try{
       if(!Cloud.auth){ const cfg={ apiKey:apiKeyEl.value.trim(), authDomain:authDomainEl.value.trim(), projectId:projectIdEl.value.trim() }; await initFirebase(cfg); }
       if(!Cloud.user) await cloudSignInAnon();
-      Cloud.autoSync = autoEl.checked;
+      Cloud.autoSync = autoEl.checked; saveAutoSync(Cloud.autoSync);
       startRealtime(Cloud.autoSync);
       updateSafeNote();
       setStatus(Cloud.autoSync? '자동 동기화 ON' : '자동 동기화 OFF');
-    }catch(e){ alert('자동 동기화 설정 실패: '+e.message); autoEl.checked=false; }
+      if(Cloud.autoSync) { await cloudSaveNow().catch(()=>{}); }
+    }catch(e){ alert('자동 동기화 설정 실패: '+e.message); autoEl.checked=false; saveAutoSync(false); }
+  };
+
+  // 규칙 가이드
+  $('#fbRules').onclick = ()=>{
+    const md = document.createElement('div');
+    md.className='modal-backdrop';
+    const rules = `rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /travelSplit/{userId} {\n      allow read, write: if request.auth != null && request.auth.uid == userId;\n    }\n  }\n}`;
+    const pathHint = `문서 경로: travelSplit/{내 UID}\n현재 UID: ${Cloud.user?Cloud.user.uid:'(로그인 전)'}`;
+    md.innerHTML = `<div class=\"modal\"><div class=\"card\"><h3>Firestore 규칙 가이드</h3><div class=\"hint\" style=\"margin:6px 0 10px\">Firestore → 규칙 탭에 아래 규칙을 붙여넣고 <b>게시</b>하세요. 컬렉션 이름은 <b>travelSplit</b> 입니다.</div><textarea style=\"width:100%;height:180px\">${rules}</textarea><div class=\"hint\" style=\"margin-top:8px\">${escapeHTML(pathHint)}</div><div class=\"row\" style=\"justify-content:flex-end;margin-top:10px\"><button class=\"btn\" id=\"copyRule\" type=\"button\">복사</button><button class=\"btn ghost\" id=\"closeRules\" type=\"button\">닫기</button></div></div></div>`;
+    document.body.appendChild(md);
+    md.querySelector('#closeRules').onclick = ()=> md.remove();
+    md.querySelector('#copyRule').onclick = async ()=>{ try{ await navigator.clipboard.writeText(rules); alert('규칙을 복사했습니다. 콘솔에 붙여넣고 게시하세요.'); }catch(_){ } };
+  };
+
+  // 권한 진단
+  $('#fbDiag').onclick = async ()=>{
+    try{
+      const cfg={ apiKey:apiKeyEl.value.trim(), authDomain:authDomainEl.value.trim(), projectId:projectIdEl.value.trim() };
+      if(!Cloud.auth) await initFirebase(cfg);
+      if(!Cloud.user) await cloudSignInAnon();
+      const ref = docRef();
+      const pingField = '__diag_'+Date.now();
+      await ref.set({ [pingField]: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true });
+      const snap = await ref.get();
+      const has = snap.exists && snap.data() && pingField in snap.data();
+      alert('권한 진단 성공\n문서 경로: travelSplit/'+Cloud.user.uid+'\n쓰기/읽기 모두 가능'+(has?' (확인됨)':''));
+    }catch(e){
+      let msg = '진단 실패: '+(e.code||'')+' '+e.message;
+      if((e.code||'').includes('permission-denied')){
+        msg += '\n\n수정 방법:\n1) Firestore → 규칙에 다음을 게시\n   match /travelSplit/{userId} { allow read, write: if request.auth != null && request.auth.uid == userId; }\n2) Authentication에서 사용한 로그인 방식이 켜져 있는지 확인(Google 또는 Anonymous).\n3) 규칙 게시 후 1~2분 뒤 다시 시도';
+      }
+      alert(msg);
+    }
   };
 }
 
@@ -1305,19 +1350,19 @@ function getCurrentTrip(){ return App.state.trips.find(t=>t.id===App.currentTrip
 function escapeHTML(str){ return (str||'').replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])) }
 function escapeAttr(str){ return escapeHTML(str).replace(/\n/g,' ') }
 
-// 사용자 정의 확인 모달 (일부 환경에서 window.confirm 차단 대비)
+// 사용자 정의 확인 모달
 function askConfirm(message, okLabel='확인', cancelLabel='취소'){
   return new Promise(resolve=>{
     const wrap = document.createElement('div');
     wrap.className = 'modal-backdrop';
     wrap.innerHTML = `
-      <div class="modal">
-        <div class="card">
+      <div class=\"modal\">
+        <div class=\"card\">
           <h3>확인</h3>
-          <div class="hint" style="margin:6px 0 12px">${escapeHTML(message)}</div>
-          <div class="row" style="justify-content:flex-end">
-            <button class="btn ghost" id="cfCancel" type="button">${escapeHTML(cancelLabel)}</button>
-            <button class="btn danger" id="cfOk" type="button">${escapeHTML(okLabel)}</button>
+          <div class=\"hint\" style=\"margin:6px 0 12px\">${escapeHTML(message)}</div>
+          <div class=\"row\" style=\"justify-content:flex-end\">
+            <button class=\"btn ghost\" id=\"cfCancel\" type=\"button\">${escapeHTML(cancelLabel)}</button>
+            <button class=\"btn danger\" id=\"cfOk\" type=\"button\">${escapeHTML(okLabel)}</button>
           </div>
         </div>
       </div>`;
@@ -1361,10 +1406,8 @@ function setupFAB(){
   btn.onclick = ()=>{
     const tripVisible = document.getElementById('screenTrip').style.display!=='none';
     if(tripVisible){
-      // 지출 입력 바로 포커스
       document.getElementById('eTitle')?.focus();
     }else{
-      // 새 여행 생성
       const id = uid();
       App.state.trips.push({id, name:'새 여행', type:'', currency:'KRW', start:'', end:'', people:[], expenses:[]});
       save(); openTrip(id);
@@ -1429,7 +1472,6 @@ function runSelfTests(){
   ]};
   const s6=calcTripStats(trip6);
   assert('TC6 정산안 2건', s6.settlements.length===2);
-  // 총 정산 금액 합은 A의 순이익과 같아야 함
   const gainA = s6.balances.find(x=>x.id==='A').net;
   const sumSettle = s6.settlements.reduce((a,b)=>a+b.amount,0);
   assert('TC6 정산 총합 = A 이익', Math.abs(gainA - sumSettle) < 0.01);
@@ -1505,8 +1547,34 @@ function runSelfTests(){
   const csv = rowsToCSV([["헤더", 'a,"b",c']]);
   assert('TC19 따옴표 이스케이프', csv.includes('"a,""b"",c"'));
 
+  // TC20: 자동 동기화 기본값 저장/불러오기
+  saveAutoSync(true);
+  assert('TC20 autosync 저장/불러오기', loadAutoSync()===true);
+  saveAutoSync(false);
+
   console.log('--- Self Tests End ---');
 }
+
+// ===== 자동 초기화/종료 훅 =====
+async function initCloudAuto(){
+  try{
+    Cloud.autoSync = loadAutoSync();
+    const cfg = loadFirebaseCfg();
+    if(cfg && cfg.apiKey && cfg.authDomain && cfg.projectId){
+      await initFirebase(cfg);
+      // 리다이렉트 복귀 처리
+      try{ const res = await Cloud.auth.getRedirectResult(); if(res && res.user){ Cloud.user=res.user; } }catch(_){ }
+      // 이미 로그인된 세션이면 즉시 실시간 구독
+      if(Cloud.user && Cloud.autoSync){ startRealtime(true); }
+      updateSafeNote();
+    }
+  }catch(e){ console.warn('클라우드 자동 초기화 실패:', e.message); }
+}
+
+// 탭 숨김/닫힘/오프라인 전환 시 푸시 보장
+window.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushCloudPush(); });
+window.addEventListener('pagehide', flushCloudPush);
+window.addEventListener('online', ()=>{ if(Cloud.autoSync) cloudSaveNow().catch(()=>{}); });
 
 // ===== 초기화 =====
 function init(){
@@ -1542,6 +1610,8 @@ function init(){
     e.target.value='';
   })
   updateSafeNote();
+  // 클라우드 자동 초기화
+  initCloudAuto();
 }
 
 window.addEventListener('DOMContentLoaded', init);
