@@ -1066,7 +1066,13 @@ function saveAutoSync(v){ localStorage.setItem(AUTO_SYNC_KEY, JSON.stringify(!!v
 
 async function ensureFirebase(){
   if(window.firebase && window.firebase.apps) return;
-  const loadScript = (src)=> new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror(()=>rej(new Error('SDK 로드 실패: '+src))); document.head.appendChild(s); });
+  const loadScript = (src)=> new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src; s.async=true; s.defer=true;
+    s.onload = res;
+    s.onerror = ()=> rej(new Error('SDK 로드 실패: '+src));
+    document.head.appendChild(s);
+  });
   // compat SDK (간편)
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js');
@@ -1495,6 +1501,21 @@ function runSelfTests(){
   // TC9: CSV 이스케이프 확인
   const csv = rowsToCSV([["헤더", 'a,"b",c']]);
   assert('TC9 따옴표 이스케이프', csv.includes('"a,""b"",c"'));
+
+  // TC10: tripDisplayName 포맷 확인
+  const td={start:'2025-12-31', name:'연말'}; 
+  assert('TC10 표시명', tripDisplayName(td)==='2025-12-31_연말');
+
+  // TC11: JPY(0소수)에서 미세 분배 라운딩
+  const tJPY={currency:'JPY', people:[A,B], expenses:[{amount:1, paidBy:'A', users:['A','B']}]};
+  const sJPY=calcTripStats(tJPY);
+  assert('TC11 JPY 총액=1', sJPY.totalAmount===1);
+  assert('TC11 JPY 정산 0건', sJPY.settlements.length===0);
+
+  // TC12: USD 0.01을 두 명이 사용 -> 임계치로 정산 없음
+  const tUSD={currency:'USD', people:[A,B], expenses:[{amount:0.01, paidBy:'A', users:['A','B']}]};
+  const sUSD=calcTripStats(tUSD);
+  assert('TC12 USD 정산 0건', sUSD.settlements.length===0);
 
   console.log('--- Self Tests End ---');
 }
