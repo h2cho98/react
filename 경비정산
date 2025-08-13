@@ -43,24 +43,16 @@
     .pill{padding:4px 10px;border-radius:999px;background:linear-gradient(135deg,rgba(92,200,255,.18),rgba(123,241,168,.15));border:1px solid #2e4d63;color:#cfefff}
     .kicker{font-size:12px;color:var(--muted)}
     .amount{font-variant-numeric:tabular-nums}
-
     .fab{position:fixed;right:16px;bottom:16px;z-index:20}
     .safe{position:fixed;left:16px;bottom:16px;font-size:12px;color:var(--muted)}
-
     .bottom-bar{position:fixed;bottom:0;left:0;right:0;backdrop-filter:saturate(180%) blur(10px);background:rgba(11,15,20,.85);border-top:1px solid var(--bd);z-index:15}
     .bottom-bar .inner{max-width:820px;margin:0 auto;padding:10px 16px;display:flex;gap:10px}
-
     .divider{height:1px;background:linear-gradient(90deg,transparent,#213148,transparent);margin:14px 0}
     .empty{padding:20px;text-align:center;color:var(--muted)}
     .hint{font-size:12px;color:var(--muted)}
     .nowrap{white-space:nowrap}
-
     .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:40}
     .modal{max-width:760px;width:100%;padding:10px}
-
-    /* 접근성: 키보드 포커스 가시성 */
-    :focus-visible{outline:2px solid var(--acc); outline-offset:2px}
-
     @media (min-width:720px){
       .grid.cols-2{grid-template-columns:1fr 1fr}
       .grid.cols-3{grid-template-columns:1fr 1fr 1fr}
@@ -82,7 +74,6 @@
         <button class="btn small" id="btnCloud" title="클라우드 동기화(Firestore)" type="button">클라우드</button>
         <button class="btn small ghost" id="btnExport" title="백업/내보내기" type="button">JSON 내보내기</button>
         <label for="importJson" class="btn small ghost" title="복원/불러오기" style="cursor:pointer">JSON 불러오기<input id="importJson" type="file" accept="application/json" hidden></label>
-        <button class="btn small ghost" id="btnRunTests" title="내장 테스트 실행" type="button">테스트</button>
       </div>
     </div>
   </header>
@@ -107,7 +98,7 @@
 
 <script>
 // ===== 데이터 모델 & 저장 =====
-const VERSION = 2; // 버전 증가(통화 자릿수/시트 overwrite 등)
+const VERSION = 1;
 const STORAGE_KEY = 'travelSplitData_v1';
 
 const App = {
@@ -119,8 +110,7 @@ const App = {
 const FIRE_CFG_KEY = 'travelSplitFirebaseCfg_v1';
 const AUTO_SYNC_KEY = 'travelSplitAutoSync_v1';
 const Cloud = {
-  cfg: null,
-  app: null, db: null, auth: null,
+  cfg: null, app: null, db: null, auth: null,
   user: null, unsub: null,
   autoSync: false, suppressPush:false,
   lastPushAt: 0,
@@ -143,22 +133,18 @@ function save(skipCloud=false){
   if(!skipCloud) scheduleCloudPush();
 }
 
-// ===== 통화/포맷 유틸 (자릿수 일관 적용) =====
+// ===== 통화/포맷 유틸 =====
 const CURRENCY_DECIMALS = { KRW:0, JPY:0, VND:0, KWD:3, BHD:3, IQD:3, JOD:3, OMR:3, TND:3, DEFAULT:2 };
 const decs = (cur)=> CURRENCY_DECIMALS[cur?.toUpperCase()] ?? CURRENCY_DECIMALS.DEFAULT;
-function roundN(n, d){ const f = 10 ** d; return Math.round((Number(n)||0) * f) / f; }
-function fmt(n, currency) {
+function roundN(n, d){ const f = 10 ** d; return Math.round((Number(n)||0)*f)/f; }
+function fmt(n, currency){
   const d = decs(currency);
-  return `${Number(n).toLocaleString(undefined,{ maximumFractionDigits:d, minimumFractionDigits:d })}${currency? ' ' + currency : ''}`;
+  return `${Number(n).toLocaleString(undefined,{maximumFractionDigits:d, minimumFractionDigits:d})}${currency? ' ' + currency: ''}`;
 }
-function fmtPlain(n, currency) {
+function fmtPlain(n, currency){
   const d = decs(currency);
-  return Number(n).toLocaleString(undefined,{ maximumFractionDigits:d, minimumFractionDigits:d });
+  return Number(n).toLocaleString(undefined,{maximumFractionDigits:d, minimumFractionDigits:d});
 }
-const stepForCurrency = (cur)=>{ const d=decs(cur||'KRW'); return d===0? '1' : (1/(10**d)).toFixed(d); };
-function isValidAmount(n){ return Number.isFinite(n) && n > 0; }
-
-// ===== 유틸 =====
 function sum(arr){ return arr.reduce((a,b)=>a+ (Number(b)||0), 0) }
 function tripDisplayName(t){ return `${t.start? t.start + '_' : ''}${t.name||'무제'}`; }
 
@@ -189,6 +175,17 @@ function renderTrips(){
     </div>`;
   root.appendChild(headerCard);
 
+  // 날짜 정렬 토글 버튼
+  let sortAsc = JSON.parse(localStorage.getItem('tripSortAsc') || 'false');
+  const typeClearBtn = headerCard.querySelector('#btnTypeClear');
+  const sortBtn = document.createElement('button');
+  sortBtn.className = 'btn small ghost';
+  sortBtn.id = 'btnSortDate';
+  sortBtn.title = '시작일 정렬 토글';
+  function setSortLabel(){ sortBtn.textContent = sortAsc ? '날짜 ▲' : '날짜 ▼'; }
+  setSortLabel();
+  typeClearBtn.insertAdjacentElement('afterend', sortBtn);
+
   const list = document.createElement('div');
   list.className = 'list';
   const q = headerCard.querySelector('#searchTrip');
@@ -202,6 +199,17 @@ function renderTrips(){
     if(type){ const tl = type.toLowerCase(); trips = trips.filter(t=> (t.type||'').toLowerCase().includes(tl)) }
     if(keyword){ trips = trips.filter(t=> (t.name||'').toLowerCase().includes(keyword)) }
 
+    // 시작일 기준 정렬 (시작일 없는 항목은 항상 뒤)
+    trips.sort((a,b)=>{
+      const da = Date.parse(a.start||'');
+      const db = Date.parse(b.start||'');
+      const aMissing = isNaN(da), bMissing = isNaN(db);
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+      return sortAsc ? (da - db) : (db - da);
+    });
+
     if(trips.length===0){
       const empty = document.createElement('div');
       empty.className='empty';
@@ -211,7 +219,6 @@ function renderTrips(){
       trips.forEach(t=>{
         const stats = calcTripStats(t);
         const total = stats.totalAmount;
-        const unsettled = stats.settlements.length>0;
         const item = document.createElement('div');
         item.className='item';
         item.innerHTML = `
@@ -224,7 +231,6 @@ function renderTrips(){
             <div class="kicker">참가자 ${t.people.length}명 · 총액 <span class="amount">${fmt(total, t.currency)}</span> · ${t.expenses.length}건</div>
           </div>
           <div class="row">
-            ${unsettled? `<span class="pill">정산 필요</span>`:`<span class="badge">정산 완료</span>`}
             <button class="btn small" data-id="${t.id}" type="button">열기</button>
             <button class="btn small ghost" data-del="${t.id}" type="button">삭제</button>
           </div>`;
@@ -236,14 +242,9 @@ function renderTrips(){
   typeSel.addEventListener('input', draw);
   typeSel.addEventListener('change', draw);
   q.addEventListener('input', draw);
-
-  // 유형 드롭다운(전체 목록 강제 표시)
-  const menuBtn = headerCard.querySelector('#btnTypeMenu');
-  const clearBtn = headerCard.querySelector('#btnTypeClear');
-  clearBtn.onclick = ()=>{ typeSel.value=''; draw(); typeSel.focus(); }
-  menuBtn.onclick = (ev)=>{
+  headerCard.querySelector('#btnTypeMenu').onclick = (ev)=>{
     ev.preventDefault(); ev.stopPropagation();
-    const rect = menuBtn.getBoundingClientRect();
+    const rect = ev.currentTarget.getBoundingClientRect();
     const menu = document.createElement('div');
     menu.className='card';
     Object.assign(menu.style, {position:'fixed', top:(rect.bottom+6)+'px', left: Math.min(rect.left, window.innerWidth-220)+'px', width:'200px', maxHeight:'260px', overflow:'auto', zIndex:1000});
@@ -256,11 +257,13 @@ function renderTrips(){
     });
     document.body.appendChild(menu);
     function close(){ menu.remove(); document.removeEventListener('click', onDoc, true); }
-    function onDoc(e){ if(!menu.contains(e.target) && e.target!==menuBtn) close(); }
+    function onDoc(e){ if(!menu.contains(e.target) && e.target!==ev.currentTarget) close(); }
     setTimeout(()=> document.addEventListener('click', onDoc, true), 0);
   };
+  headerCard.querySelector('#btnTypeClear').onclick = ()=>{ typeSel.value=''; draw(); typeSel.focus(); };
+  sortBtn.onclick = ()=>{ sortAsc = !sortAsc; localStorage.setItem('tripSortAsc', JSON.stringify(sortAsc)); setSortLabel(); draw(); };
 
-  // 위임: 열기/삭제
+  // 위임 클릭(개별 핸들러 없음)
   list.addEventListener('click', async (ev)=>{
     const target = ev.target instanceof Element ? ev.target : ev.target.parentElement;
     if(!target) return;
@@ -345,7 +348,7 @@ function openTrip(id){
     <h3>참가자</h3>
     <div id="peopleList" class="chips" style="margin-bottom:10px"></div>
     <div class="row">
-      <input id="newPerson" placeholder="이름 입력 후 추가" enterkeyhint="done" />
+      <input id="newPerson" placeholder="이름 입력 후 Enter" enterkeyhint="done" />
       <button class="btn" id="btnAddPerson" type="button">+ 추가</button>
     </div>
     <div class="hint" style="margin-top:8px">이름을 탭하면 삭제할 수 있습니다.</div>
@@ -394,10 +397,7 @@ function openTrip(id){
     </div>
   `;
   root.appendChild(expCard);
-  // 새 지출 입력의 날짜 기본값 = 출발일
   if(t.start){ const d = expCard.querySelector('#eDate'); if(d) d.value = t.start; }
-  // 금액 step 적용
-  expCard.querySelector('#eAmount').setAttribute('step', stepForCurrency(t.currency||'KRW'));
 
   // 요약 카드
   const sumCard = document.createElement('div');
@@ -409,7 +409,7 @@ function openTrip(id){
   root.appendChild(sumCard);
   enableAutoShowDatePickers(root);
 
-  // 동작 바인딩
+  // 저장
   top.querySelector('#btnSaveTrip').onclick = ()=>{
     t.name = top.querySelector('#tName').value.trim()||'무제';
     t.type = top.querySelector('#tType').value;
@@ -429,11 +429,11 @@ function openTrip(id){
       chip.onclick = async ()=>{
         const ok = await askConfirm(`참가자 \"${p.name}\" 및 관련 지출을 삭제할까요?`, '삭제', '취소');
         if(!ok) return;
-        // 개선: 지불자는 해당 지출의 남은 사용자 중 한 명으로 재할당
+        // 지불자/사용자 정리: 지불자는 남은 사용자 중 1명으로, 없으면 항목 제거
         t.expenses = (t.expenses||[]).map(e=>{
           const newUsers = e.users.filter(id=> id !== p.id);
           let newPaidBy = e.paidBy;
-          if(e.paidBy === p.id){ newPaidBy = newUsers[0] || null; }
+          if (e.paidBy === p.id) newPaidBy = newUsers[0] || null;
           return { ...e, paidBy: newPaidBy, users: newUsers };
         }).filter(e=> e.paidBy && e.users.length>0);
         t.people = t.people.filter(x=>x.id!==p.id);
@@ -444,20 +444,8 @@ function openTrip(id){
   }
   drawPeople();
 
+  // 참가자 추가 (Enter 후 포커스 유지, 부분 갱신)
   const newPersonInput = peopleCard.querySelector('#newPerson');
-  const addPerson = ()=>{
-    const name = newPersonInput.value.trim();
-    if(!name) return;
-    t.people.push({id:uid(), name});
-    newPersonInput.value='';
-    save(); openTrip(t.id);
-  };
-  peopleCard.querySelector('#btnAddPerson').onclick = addPerson;
-  // Enter 키로 참가자 추가 (IME 조합 입력 중 Enter는 무시)
-  newPersonInput.addEventListener('keydown', (e)=>{
-    if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); addPerson(); }
-  });
-
   function drawExpenseUsers(selectedIds=null){
     const wrap = expCard.querySelector('#eUsers');
     wrap.innerHTML='';
@@ -470,8 +458,34 @@ function openTrip(id){
       wrap.appendChild(c);
     })
   }
-  // 기본: 참가자 전원 선택
   drawExpenseUsers(null);
+
+  function refreshExpenseInputsAfterPeopleChange(){
+    const payerSel = expCard.querySelector('#ePayer');
+    if (payerSel){
+      const prev = payerSel.value;
+      payerSel.innerHTML = t.people.map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('');
+      if (prev && t.people.find(p=>p.id===prev)) payerSel.value = prev;
+      else payerSel.value = t.people[0]?.id || '';
+    }
+    drawExpenseUsers(null);
+    drawSummary();
+  }
+
+  const addPerson = ()=>{
+    const name = newPersonInput.value.trim();
+    if(!name){ newPersonInput.focus(); return; }
+    t.people.push({id:uid(), name});
+    newPersonInput.value='';
+    save();
+    drawPeople();
+    refreshExpenseInputsAfterPeopleChange();
+    newPersonInput.focus();
+  };
+  peopleCard.querySelector('#btnAddPerson').onclick = addPerson;
+  newPersonInput.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); addPerson(); }
+  });
 
   function drawExpenses(){
     const list = expCard.querySelector('#expList');
@@ -494,7 +508,6 @@ function openTrip(id){
             <button class="btn small ghost" data-del-exp="${e.id}" type="button">삭제</button>
           </div>`;
         list.appendChild(item);
-        // 지출 항목 삭제/수정 (개별 바인딩)
         item.querySelector('[data-del-exp]').onclick = async ()=>{
           const ok = await askConfirm('이 지출을 삭제할까요?', '삭제', '취소');
           if(!ok) return;
@@ -506,6 +519,15 @@ function openTrip(id){
   }
   drawExpenses();
 
+  // 금액 step 설정
+  {
+    const d = decs(t.currency||'KRW');
+    const step = d===0 ? '1' : (1 / (10**d)).toFixed(d);
+    expCard.querySelector('#eAmount').setAttribute('step', step);
+  }
+
+  function isValidAmount(n){ return Number.isFinite(n) && n > 0; }
+
   expCard.querySelector('#btnAddExpense').onclick = ()=>{
     const date = expCard.querySelector('#eDate').value;
     const title = expCard.querySelector('#eTitle').value.trim();
@@ -516,7 +538,6 @@ function openTrip(id){
     if(!title || !isValidAmount(amount) || !paidBy || users.length===0){ alert('항목/금액(0보다 큰 숫자)/지불자/사용자(분배 대상)를 확인하세요.'); return }
     t.expenses.push({id:uid(), date, title, amount, paidBy, users, memo});
     expCard.querySelector('#eTitle').value=''; expCard.querySelector('#eAmount').value=''; expCard.querySelector('#eMemo').value='';
-    // 기본값: 출발일로 날짜 재설정, 분배대상 전원 선택으로 초기화
     if(t.start){ expCard.querySelector('#eDate').value = t.start; } else { expCard.querySelector('#eDate').value = ''; }
     drawExpenseUsers(null);
     save(); openTrip(t.id);
@@ -537,16 +558,13 @@ function openTrip(id){
       <div class="card" style="background:#0e1722"><div class="kicker">지출 건수</div><div style="font-size:18px">${t.expenses.length}건</div></div>`;
     el.appendChild(totals);
 
-    // 개인별 정산표
     const table = document.createElement('div');
     table.className='list';
     s.balances.forEach(b=>{
       const item = document.createElement('div'); item.className='item';
-      const status = b.net>0? '받을 금액' : (b.net<0? '보낼 금액':'정산 완료');
-      const color = b.net>0? 'badge' : (b.net<0? 'pill':'badge');
       item.innerHTML = `
         <div><strong>${escapeHTML(b.name)}</strong><div class="kicker">지불 ${fmt(b.paid, currency)} · 사용 ${fmt(b.used, currency)}</div></div>
-        <div class="row"><span class="${color}">${status}</span><div class="amount" style="min-width:110px;text-align:right">${fmt(b.net, currency)}</div></div>`;
+        <div class="row"><div class="badge">순액</div><div class="amount" style="min-width:110px;text-align:right">${fmt(b.net, currency)}</div></div>`;
       table.appendChild(item);
     })
     el.appendChild(table);
@@ -617,7 +635,6 @@ function openExpenseEditor(t, expId){
   document.body.appendChild(modal);
   enableAutoShowDatePickers(modal);
 
-  // 초기값 설정
   modal.querySelector('#edPayer').value = e.paidBy;
   const usersWrap = modal.querySelector('#edUsers');
   const userSet = new Set(e.users||[]);
@@ -628,8 +645,6 @@ function openExpenseEditor(t, expId){
     c.onclick=()=> c.classList.toggle('active');
     usersWrap.appendChild(c);
   });
-  // 금액 step 적용
-  modal.querySelector('#edAmount').setAttribute('step', stepForCurrency(t.currency||'KRW'));
 
   function close(){ modal.remove(); }
 
@@ -640,6 +655,11 @@ function openExpenseEditor(t, expId){
     t.expenses = t.expenses.filter(x=>x.id!==e.id);
     save(); close(); openTrip(t.id);
   };
+  {
+    const d = decs(t.currency||'KRW');
+    const step = d===0 ? '1' : (1 / (10**d)).toFixed(d);
+    modal.querySelector('#edAmount').setAttribute('step', step);
+  }
   modal.querySelector('#saveBtn').onclick = ()=>{
     const date = modal.querySelector('#edDate').value;
     const title = modal.querySelector('#edTitle').value.trim();
@@ -647,7 +667,7 @@ function openExpenseEditor(t, expId){
     const paidBy = modal.querySelector('#edPayer').value;
     const users = [...modal.querySelectorAll('#edUsers .chip.active')].map(x=>x.dataset.id);
     const memo = modal.querySelector('#edMemo').value.trim();
-    if(!title || !isValidAmount(amount) || !paidBy || users.length===0){ alert('항목/금액(0보다 큰 숫자)/지불자/사용자(분배 대상)를 확인하세요.'); return }
+    if(!title || !Number.isFinite(amount) || amount<=0 || !paidBy || users.length===0){ alert('항목/금액(0보다 큰 숫자)/지불자/사용자(분배 대상)를 확인하세요.'); return }
     e.date = date; e.title = title; e.amount = amount; e.paidBy = paidBy; e.users = users; e.memo = memo;
     save(); close(); openTrip(t.id);
   };
@@ -657,12 +677,12 @@ function openExpenseEditor(t, expId){
 function calcTripStats(t){
   const currency = t.currency||'KRW';
   const d = decs(currency);
-  const eps = 0.5 / (10 ** d); // 반 최소단위 임계치
+  const eps = 0.5 / (10 ** d); // 반 최소단위
 
   const people = t.people;
   const totalsUsed = Object.fromEntries(people.map(p=>[p.id,0]));
   const totalsPaid = Object.fromEntries(people.map(p=>[p.id,0]));
-  let totalAmount = 0; let totalShares = 0; // 사용자 수 기반 평균 계산용
+  let totalAmount = 0; let totalShares = 0;
 
   (t.expenses||[]).forEach(e=>{
     const n = e.users.length;
@@ -680,21 +700,19 @@ function calcTripStats(t){
     return { id:p.id, name:p.name, paid, used, net: roundN(paid - used, d) };
   });
 
-  // 정산 제안 (그리디)
+  // 정산 제안(그리디)
   const debtors = balances.filter(b=>b.net< -eps).map(b=>({name:b.name, id:b.id, amount: -b.net})).sort((a,b)=>b.amount-a.amount);
-  const creditors = balances.filter(b=>b.net>  eps).map(b=>({name:b.name, id:b.id, amount: b.net})).sort((a,b)=>b.amount-a.amount);
+  const creditors = balances.filter(b=>b.net>  eps).map(b=>({name:b.name, id:b.id, amount:  b.net})).sort((a,b)=>b.amount-a.amount);
   const settlements = [];
   let i=0, j=0;
   while(i<debtors.length && j<creditors.length){
     const dbr = debtors[i], cdr = creditors[j];
     const amt = Math.min(dbr.amount, cdr.amount);
-    if(amt>eps){
-      settlements.push({from:dbr.name, to:cdr.name, amount: roundN(amt, d)});
-    }
+    if(amt > eps){ settlements.push({from:dbr.name, to:cdr.name, amount: roundN(amt, d)}); }
     dbr.amount = roundN(dbr.amount - amt, d);
     cdr.amount = roundN(cdr.amount - amt, d);
-    if(dbr.amount<=eps) i++;
-    if(cdr.amount<=eps) j++;
+    if(dbr.amount <= eps) i++;
+    if(cdr.amount <= eps) j++;
   }
 
   const avgUsers = new Set((t.expenses||[]).flatMap(e=>e.users)).size || people.length || 1;
@@ -706,24 +724,25 @@ function calcTripStats(t){
 // ===== 공유 및 요약 텍스트 =====
 function buildSummaryText(t){
   const s = calcTripStats(t);
+  const currency = t.currency||'KRW';
   const peopleList = t.people.map(p=>p.name).join(', ');
   const lines = [];
   lines.push(`📌 여행 정산 — ${t.name}${t.type? ' ('+t.type+')':''}`);
   if(t.start || t.end){ lines.push(`기간: ${t.start||''} ~ ${t.end||''}`) }
   lines.push(`참가자: ${peopleList}`);
   lines.push('');
-  lines.push(`총액: ${fmtPlain(s.totalAmount, t.currency)}`);
+  lines.push(`총액: ${fmtPlain(s.totalAmount, currency)}`);
   lines.push(`지출 ${t.expenses.length}건`);
   lines.push('');
   lines.push('— 개인별 정산');
   s.balances.forEach(b=>{
     const tag = b.net>0? '받을 금액' : (b.net<0? '보낼 금액':'정산 완료');
-    lines.push(`• ${b.name}: 지불 ${fmtPlain(b.paid, t.currency)}, 사용 ${fmtPlain(b.used, t.currency)}, ${tag} ${fmtPlain(b.net, t.currency)}`);
+    lines.push(`• ${b.name}: 지불 ${fmtPlain(b.paid, currency)}, 사용 ${fmtPlain(b.used, currency)}, ${tag} ${fmtPlain(b.net, currency)}`);
   })
   lines.push('');
   if(s.settlements.length){
     lines.push('— 송금 제안');
-    s.settlements.forEach(x=> lines.push(`• ${x.from} → ${x.to}: ${fmtPlain(x.amount, t.currency)}`));
+    s.settlements.forEach(x=> lines.push(`• ${x.from} → ${x.to}: ${fmtPlain(x.amount, currency)}`));
   }else{
     lines.push('— 모든 정산이 완료되었습니다.');
   }
@@ -733,29 +752,25 @@ function buildSummaryText(t){
     const users = e.users.map(id=> t.people.find(p=>p.id===id)?.name).filter(Boolean).join(', ');
     const payer = t.people.find(p=>p.id===e.paidBy)?.name || '';
     const memoOne = (e.memo||'').replace(/\n/g,' ').trim();
-    lines.push(`• ${e.date||''} ${e.title}: ${fmtPlain(e.amount, t.currency)} (지불자 ${payer}, 사용: ${users})${memoOne? ' — 메모: '+memoOne : ''}`);
+    lines.push(`• ${e.date||''} ${e.title}: ${fmtPlain(e.amount, currency)} (지불자 ${payer}, 사용: ${users})${memoOne? ' — 메모: '+memoOne : ''}`);
   })
   return lines.join('\n');
 }
 
 function buildChatMessage(t){
   const s = calcTripStats(t);
-  const peopleCnt = t.people.length;
   const currency = t.currency||'KRW';
+  const peopleCnt = t.people.length;
   const signed = (n)=> (n>0?'+':'') + fmtPlain(n, currency);
   const lines = [];
-  // 1~2줄: 제목/기간
   lines.push(`[정산] ${t.name}${t.type?`/${t.type}`:''}`);
   if(t.start || t.end){ lines.push(`${t.start||''}${t.end?`~${t.end}`:''}`); }
-  // 3줄: 총액/건수/인원 (통화 단위 제거)
   lines.push(`총액 ${fmtPlain(s.totalAmount, currency)} · 지출 ${t.expenses.length}건 · ${peopleCnt}명`);
-  // 4줄: 정산 제안 요약
   if(s.settlements.length){
     lines.push('정산 ' + s.settlements.map(x=>`${x.from}->${x.to} ${fmtPlain(x.amount, currency)}`).join(' · '));
   }else{
     lines.push('정산 완료');
   }
-  // 5줄: 개인별 순액 요약
   lines.push('개인 ' + s.balances.map(b=>`${b.name} ${signed(b.net)}`).join(', '));
   return lines.join('\n');
 }
@@ -767,7 +782,6 @@ async function copySummary(){
     await navigator.clipboard.writeText(text);
     alert('요약 텍스트를 복사했습니다. 채팅방에 붙여넣기 하세요.');
   }catch(e){
-    // fallback: 수동 복사 모달
     const modal = document.createElement('div');
     modal.className='modal-backdrop';
     modal.innerHTML = `<div class=\"modal\"><div class=\"card\"><h3>복사 실패</h3><div class=\"hint\">아래 내용을 길게 눌러 복사해주세요.</div><textarea style=\"width:100%;height:220px;margin-top:8px\">${escapeHTML(text)}</textarea><div class=\"row\" style=\"justify-content:flex-end;margin-top:8px\"><button class=\"btn\" id=\"closeCopy\" type=\"button\">닫기</button></div></div></div>`;
@@ -813,7 +827,7 @@ async function shareChat(){
   }
 }
 
-// ===== 스프레드시트 (구글시트) 연동: TSV/CSV + 직접 쓰기(덮어쓰기) =====
+// ===== 스프레드시트 (구글시트) — 덮어쓰기 =====
 const SHEETS_CFG_KEY = 'travelSplitSheetsCfg_v1';
 let gsTokenClient = null, gsAccessToken = null, gsTokenExpiry = 0, gsClientIdMemo = null;
 
@@ -840,7 +854,7 @@ function initGsTokenClient(clientId){
     callback: (resp)=>{
       if(resp.error){ console.error(resp); alert('토큰 발급 실패: '+resp.error); return; }
       gsAccessToken = resp.access_token;
-      gsTokenExpiry = Date.now() + ((resp.expires_in||3600)-60)*1000; // 1분 여유
+      gsTokenExpiry = Date.now() + ((resp.expires_in||3600)-60)*1000;
       console.log('Sheets 토큰 확보');
     }
   });
@@ -863,26 +877,29 @@ async function getGsToken(clientId, promptConsent){
   });
 }
 
-// 덮어쓰기 방식: 시트 비우기 후 A1부터 전체 데이터 업데이트
-async function writeRowsToGoogleSheetOverwrite({clientId, sheetId, sheetName, rows}){
-  // 토큰 확보 (가능하면 조용히, 실패 시 동의창)
+async function overwriteGoogleSheet({clientId, sheetId, sheetName, rows}){
+  // 토큰 확보
   let token = tokenValid()? gsAccessToken : await getGsToken(clientId, false);
   if(!token){ token = await getGsToken(clientId, true); }
   if(!token){ throw new Error('Google 인증 실패'); }
 
-  const name = sheetName || 'Sheet1';
-  // 1) clear entire sheet
-  const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(name)}:clear`;
-  const clearResp = await fetch(clearUrl, { method:'POST', headers:{ 'Authorization': 'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({}) });
-  if(!clearResp.ok){ const text = await clearResp.text(); throw new Error(`시트 비우기 실패 ${clearResp.status}: ${text}`); }
+  const rangeA1 = `${sheetName||'Sheet1'}!A1`;
+  const rangeEnc = encodeURIComponent(rangeA1);
 
-  // 2) write values starting at A1
-  const range = `${name}!A1`;
-  const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
-  const payload = { range, majorDimension:'ROWS', values: rows };
-  const resp = await fetch(updateUrl, { method:'PUT', headers:{ 'Authorization': 'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-  if(!resp.ok){ const text = await resp.text(); throw new Error(`Google API 오류 ${resp.status}: ${text}`); }
-  return await resp.json();
+  // 1) clear
+  {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${rangeEnc}:clear`;
+    const resp = await fetch(url, { method:'POST', headers:{ 'Authorization': 'Bearer '+token } });
+    if(!resp.ok){ const text = await resp.text(); throw new Error(`clear 실패 ${resp.status}: ${text}`); }
+  }
+  // 2) update
+  {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${rangeEnc}?valueInputOption=RAW`;
+    const payload = { range: rangeA1, majorDimension:'ROWS', values: rows };
+    const resp = await fetch(url, { method:'PUT', headers:{ 'Authorization': 'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+    if(!resp.ok){ const text = await resp.text(); throw new Error(`update 실패 ${resp.status}: ${text}`); }
+    return await resp.json();
+  }
 }
 
 function openSheetExportModal(){
@@ -890,53 +907,53 @@ function openSheetExportModal(){
   wrap.className='modal-backdrop';
   const cfg = loadSheetsCfg();
   wrap.innerHTML = `
-    <div class=\"modal\">
-      <div class=\"card\">
+    <div class="modal">
+      <div class="card">
         <h3>구글시트 연동</h3>
-        <div class=\"kicker\">아래 두 가지 방식 중 선택하세요.</div>
-        <div class=\"divider\"></div>
+        <div class="kicker">아래 두 가지 방식 중 선택하세요.</div>
+        <div class="divider"></div>
         <div>
-          <h4 style=\"margin:0 0 8px\">① 복사/다운로드 후 붙여넣기</h4>
+          <h4 style="margin:0 0 8px">① 복사/다운로드 후 붙여넣기</h4>
           <label>행 구성</label>
-          <div class=\"row\">
-            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode\" value=\"trip\" checked style=\"margin-right:6px\"> 여행별 1행</label>
-            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode\" value=\"expense\" style=\"margin-right:6px\"> 지출별 여러행</label>
+          <div class="row">
+            <label class="chip"><input type="radio" name="sheetMode" value="trip" checked style="margin-right:6px"> 여행별 1행</label>
+            <label class="chip"><input type="radio" name="sheetMode" value="expense" style="margin-right:6px"> 지출별 여러행</label>
           </div>
-          <div class=\"row\" style=\"justify-content:flex-end;margin-top:10px\">
-            <button class=\"btn\" id=\"shCopyTSV\" type=\"button\">TSV 복사(구글시트용)</button>
-            <button class=\"btn\" id=\"shDownloadCSV\" type=\"button\">CSV 다운로드</button>
+          <div class="row" style="justify-content:flex-end;margin-top:10px">
+            <button class="btn" id="shCopyTSV" type="button">TSV 복사(구글시트용)</button>
+            <button class="btn" id="shDownloadCSV" type="button">CSV 다운로드</button>
           </div>
         </div>
-        <div class=\"divider\"></div>
+        <div class="divider"></div>
         <div>
-          <h4 style=\"margin:0 0 8px\">② 직접 쓰기(베타 · OAuth 필요)</h4>
-          <div class=\"hint\" style=\"margin:6px 0\">HTTPS로 호스팅된 주소에서만 동작합니다(파일 직접 열기 X). 구글 클라우드 콘솔의 OAuth 2.0 클라이언트에 현재 URL을 <b>승인된 JavaScript 원본</b>으로 등록해야 합니다.</div>
-          <div class=\"grid cols-3\">
+          <h4 style="margin:0 0 8px">② 시트에 덮어쓰기(Overwrite)</h4>
+          <div class="hint" style="margin:6px 0">HTTPS 도메인에서만 동작합니다. OAuth 클라이언트의 승인된 JavaScript 원본에 현재 URL을 등록하세요.</div>
+          <div class="grid cols-3">
             <div>
               <label>OAuth 클라이언트 ID</label>
-              <input id=\"gsClientId\" placeholder=\"...apps.googleusercontent.com\" value=\"${escapeAttr(cfg.clientId||'')}\" />
+              <input id="gsClientId" placeholder="...apps.googleusercontent.com" value="${escapeAttr(cfg.clientId||'')}" />
             </div>
             <div>
               <label>스프레드시트 ID</label>
-              <input id=\"gsSheetId\" placeholder=\"시트 URL의 /d/ 와 /edit 사이\" value=\"${escapeAttr(cfg.sheetId||'')}\" />
+              <input id="gsSheetId" placeholder="시트 URL의 /d/ 와 /edit 사이" value="${escapeAttr(cfg.sheetId||'')}" />
             </div>
             <div>
               <label>시트 이름</label>
-              <input id=\"gsSheetName\" placeholder=\"Sheet1\" value=\"${escapeAttr(cfg.sheetName||'Sheet1')}\" />
+              <input id="gsSheetName" placeholder="Sheet1" value="${escapeAttr(cfg.sheetName||'Sheet1')}" />
             </div>
           </div>
-          <div class=\"row\" style=\"margin-top:8px\">
-            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode2\" value=\"trip\" checked> 여행별 1행</label>
-            <label class=\"chip\"><input type=\"radio\" name=\"sheetMode2\" value=\"expense\"> 지출별 여러행</label>
-            <label class=\"chip\"><input type=\"checkbox\" id=\"gsWithHeader\" checked> 헤더 포함</label>
+          <div class="row" style="margin-top:8px">
+            <label class="chip"><input type="radio" name="sheetMode2" value="trip" checked> 여행별 1행</label>
+            <label class="chip"><input type="radio" name="sheetMode2" value="expense"> 지출별 여러행</label>
+            <label class="chip"><input type="checkbox" id="gsWithHeader" checked> 헤더 포함</label>
           </div>
-          <div class=\"row\" style=\"justify-content:flex-end;margin-top:10px\">
-            <button class=\"btn\" id=\"gsLoginBtn\" type=\"button\">로그인/권한 요청</button>
-            <button class=\"btn primary\" id=\"gsAppendBtn\" type=\"button\">시트에 덮어쓰기</button>
+          <div class="row" style="justify-content:flex-end;margin-top:10px">
+            <button class="btn" id="gsLoginBtn" type="button">로그인/권한 요청</button>
+            <button class="btn primary" id="gsOverwriteBtn" type="button">시트에 덮어쓰기</button>
           </div>
         </div>
-        <div class=\"row\" style=\"justify-content:flex-end;margin-top:12px\">
-          <button class=\"btn ghost\" id=\"shClose\" type=\"button\">닫기</button>
+        <div class="row" style="justify-content:flex-end;margin-top:12px">
+          <button class="btn ghost" id="shClose" type="button">닫기</button>
         </div>
       </div>
     </div>`;
@@ -947,13 +964,15 @@ function openSheetExportModal(){
 
   const getMode = ()=> (wrap.querySelector('input[name="sheetMode"]:checked')?.value || 'trip');
   wrap.querySelector('#shCopyTSV').onclick = async ()=>{
-    const rows = buildSheetRows(getMode());
+    load();
+    const rows = buildSheetRows(getMode(), ' | ');
     const tsv = rowsToTSV(rows);
     try{ await navigator.clipboard.writeText(tsv); alert('TSV를 복사했어요. 구글시트에 붙여넣기 하세요.'); }
     catch(e){ showCopyFallback(tsv); }
   };
   wrap.querySelector('#shDownloadCSV').onclick = ()=>{
-    const rows = buildSheetRows(getMode());
+    load();
+    const rows = buildSheetRows(getMode(), '\n');
     const csv = rowsToCSV(rows);
     const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);
@@ -961,7 +980,7 @@ function openSheetExportModal(){
     setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },0);
   };
 
-  // 직접 쓰기(덮어쓰기) 바인딩
+  // 직접 쓰기(덮어쓰기)
   const $ = (sel)=> wrap.querySelector(sel);
   const clientIdEl = $('#gsClientId');
   const sheetIdEl = $('#gsSheetId');
@@ -983,31 +1002,31 @@ function openSheetExportModal(){
     }catch(err){ alert('인증 초기화 실패: '+err.message); }
   };
 
-  $('#gsAppendBtn').onclick = async ()=>{
+  $('#gsOverwriteBtn').onclick = async ()=>{
     try{
+      load();
       const mode = getMode2();
-      let rows = buildSheetRows(mode);
+      let rows = buildSheetRows(mode, '\n');
       if(!withHeaderEl.checked){ rows = rows.slice(1); }
-      const res = await writeRowsToGoogleSheetOverwrite({
+      const res = await overwriteGoogleSheet({
         clientId: clientIdEl.value.trim(),
         sheetId: sheetIdEl.value.trim(),
         sheetName: sheetNameEl.value.trim()||'Sheet1',
         rows
       });
-      alert('시트에 덮어쓰기 완료! (업데이트 범위: '+ (res.updatedRange || res.updates?.updatedRange || '알 수 없음') +')');
+      alert('시트에 덮어쓰기 완료! (업데이트 범위: '+ (res.updatedRange || '알 수 없음') +')');
     }catch(err){
       console.error(err);
-      alert('전송 실패(덮어쓰기): '+ err.message + '\n\n· HTTPS에서 열었는지\n· OAuth 클라이언트에 현재 도메인이 등록됐는지\n· 스프레드시트 ID/이름이 정확한지 확인하세요.');
+      alert('전송 실패: '+ err.message + '\n\n· HTTPS에서 열었는지\n· OAuth 클라이언트에 현재 도메인이 등록됐는지\n· 스프레드시트 ID/이름이 정확한지 확인하세요.');
     }
   };
 }
 
-function buildSheetRows(mode='trip'){
+function buildSheetRows(mode='trip', joiner=' | '){
   const rows = [];
-  // 헤더 고정: 여행 시작일, 여행 이름, 참가자, 지출내역, 총 지출
   rows.push(['여행 시작일','여행 이름','참가자','지출내역','총 지출']);
   const trips = App.state.trips || [];
-  const startOnly = (t)=> (t.start||'');
+  const dateStr = (t)=> (t.start||'');
   const joinNames = (arr)=> (arr||[]).map(x=>x.name).join(', ');
   const userNames = (t, ids)=> ids.map(id=> t.people.find(p=>p.id===id)?.name).filter(Boolean).join(', ');
   if(mode==='trip'){
@@ -1018,10 +1037,10 @@ function buildSheetRows(mode='trip'){
         const users = userNames(t, e.users);
         const memo = (e.memo||'').replace(/\n/g,' ').trim();
         return `${e.date||''} ${e.title} ${fmtPlain(e.amount, t.currency)} (지불자 ${payer}, 사용: ${users}${memo?`, 메모: ${memo}`:''})`;
-      }).join(' | ');
-      rows.push([startOnly(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount, t.currency)]);
+      }).join(joiner);
+      rows.push([dateStr(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount, t.currency)]);
     });
-  }else{ // expense rows
+  }else{
     trips.forEach(t=>{
       const s = calcTripStats(t);
       (t.expenses||[]).forEach(e=>{
@@ -1029,10 +1048,10 @@ function buildSheetRows(mode='trip'){
         const users = userNames(t, e.users);
         const memo = (e.memo||'').replace(/\n/g,' ').trim();
         const expStr = `${e.date||''} ${e.title} ${fmtPlain(e.amount, t.currency)} (지불자 ${payer}, 사용: ${users}${memo?`, 메모: ${memo}`:''})`;
-        rows.push([startOnly(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount, t.currency)]);
+        rows.push([dateStr(t), t.name||'', joinNames(t.people), expStr, fmtPlain(s.totalAmount, t.currency)]);
       })
       if((t.expenses||[]).length===0){
-        rows.push([startOnly(t), t.name||'', joinNames(t.people), '', fmtPlain(calcTripStats(t).totalAmount, t.currency)]);
+        rows.push([dateStr(t), t.name||'', joinNames(t.people), '', fmtPlain(calcTripStats(t).totalAmount, t.currency)]);
       }
     });
   }
@@ -1069,11 +1088,10 @@ async function ensureFirebase(){
   const loadScript = (src)=> new Promise((res,rej)=>{
     const s=document.createElement('script');
     s.src=src; s.async=true; s.defer=true;
-    s.onload = res;
-    s.onerror = ()=> rej(new Error('SDK 로드 실패: '+src));
+    s.onload=res;
+    s.onerror=()=>rej(new Error('SDK 로드 실패: '+src));
     document.head.appendChild(s);
   });
-  // compat SDK (간편)
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js');
   await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js');
@@ -1106,7 +1124,7 @@ async function cloudSignInGoogle(){
   }catch(e){
     if(e && (e.code==='auth/popup-blocked' || e.code==='auth/operation-not-supported-in-this-environment')){
       await Cloud.auth.signInWithRedirect(provider);
-      return null; // 리다이렉트 이후 복귀 시 처리
+      return null;
     }
     throw e;
   }
@@ -1175,7 +1193,7 @@ function startRealtime(on){
   if(!on) return;
   Cloud.unsub = docRef().onSnapshot(snap=>{
     if(!snap.exists) return;
-    if(snap.metadata.hasPendingWrites) return; // 로컬 쓰기 반영 이벤트 무시
+    if(snap.metadata.hasPendingWrites) return;
     const d = snap.data();
     if(!d || !d.data) return;
     const remoteStr = JSON.stringify(d.data);
@@ -1207,33 +1225,33 @@ function openCloudModal(){
   const wrap = document.createElement('div');
   wrap.className='modal-backdrop';
   wrap.innerHTML = `
-    <div class=\"modal\">
-      <div class=\"card\">
+    <div class="modal">
+      <div class="card">
         <h3>클라우드 동기화 (Firebase Firestore)</h3>
-        <div class=\"hint\" style=\"margin:6px 0 10px\">GitHub Pages 같은 HTTPS 도메인에서 동작합니다. Firebase 콘솔에서 Firestore 생성 및 <b>인증</b>을 설정하세요. (익명 또는 Google 로그인)</div>
-        <div class=\"grid cols-3\">
-          <div><label>apiKey</label><input id=\"fbApiKey\" placeholder=\"apiKey\" value=\"${escapeAttr(cfg.apiKey||'')}\" /></div>
-          <div><label>authDomain</label><input id=\"fbAuthDomain\" placeholder=\"example.firebaseapp.com\" value=\"${escapeAttr(cfg.authDomain||'')}\" /></div>
-          <div><label>projectId</label><input id=\"fbProjectId\" placeholder=\"your-project\" value=\"${escapeAttr(cfg.projectId||'')}\" /></div>
+        <div class="hint" style="margin:6px 0 10px">GitHub Pages 같은 HTTPS 도메인에서 동작합니다. Firebase 콘솔에서 Firestore 생성 및 <b>인증</b>을 설정하세요. (익명 또는 Google 로그인)</div>
+        <div class="grid cols-3">
+          <div><label>apiKey</label><input id="fbApiKey" placeholder="apiKey" value="${escapeAttr(cfg.apiKey||'')}" /></div>
+          <div><label>authDomain</label><input id="fbAuthDomain" placeholder="example.firebaseapp.com" value="${escapeAttr(cfg.authDomain||'')}" /></div>
+          <div><label>projectId</label><input id="fbProjectId" placeholder="your-project" value="${escapeAttr(cfg.projectId||'')}" /></div>
         </div>
-        <div class=\"row\" style=\"margin-top:8px; gap:8px; flex-wrap:wrap\">
-          <button class=\"btn\" id=\"fbInit\" type=\"button\">연결</button>
-          <button class=\"btn\" id=\"fbLogin\" type=\"button\">익명 로그인</button>
-          <button class=\"btn\" id=\"fbGoogle\" type=\"button\">Google 로그인</button>
-          <button class=\"btn ghost\" id=\"fbLink\" type=\"button\">익명→Google 연결(데이터 유지)</button>
-          <button class=\"btn ghost\" id=\"fbLogout\" type=\"button\">로그아웃</button>
-          <span class=\"kicker\" id=\"fbStatus\">상태: 초기화 전</span>
-          <button class=\"btn ghost\" id=\"fbRules\" type=\"button\">규칙 가이드</button>
-          <button class=\"btn ghost\" id=\"fbDiag\" type=\"button\">권한 진단</button>
+        <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap">
+          <button class="btn" id="fbInit" type="button">연결</button>
+          <button class="btn" id="fbLogin" type="button">익명 로그인</button>
+          <button class="btn" id="fbGoogle" type="button">Google 로그인</button>
+          <button class="btn ghost" id="fbLink" type="button">익명→Google 연결(데이터 유지)</button>
+          <button class="btn ghost" id="fbLogout" type="button">로그아웃</button>
+          <span class="kicker" id="fbStatus">상태: 초기화 전</span>
+          <button class="btn ghost" id="fbRules" type="button">규칙 가이드</button>
+          <button class="btn ghost" id="fbDiag" type="button">권한 진단</button>
         </div>
-        <div class=\"divider\"></div>
-        <div class=\"row\">
-          <label class=\"chip\"><input type=\"checkbox\" id=\"autoSync\"> 자동 동기화(실시간)</label>
-          <button class=\"btn\" id=\"fbPull\" type=\"button\">클라우드 불러오기</button>
-          <button class=\"btn primary\" id=\"fbPush\" type=\"button\">클라우드 저장</button>
+        <div class="divider"></div>
+        <div class="row">
+          <label class="chip"><input type="checkbox" id="autoSync"> 자동 동기화(실시간)</label>
+          <button class="btn" id="fbPull" type="button">클라우드 불러오기</button>
+          <button class="btn primary" id="fbPush" type="button">클라우드 저장</button>
         </div>
-        <div class=\"row\" style=\"justify-content:flex-end;margin-top:12px\">
-          <button class=\"btn ghost\" id=\"cloudClose\" type=\"button\">닫기</button>
+        <div class="row" style="justify-content:flex-end;margin-top:12px">
+          <button class="btn ghost" id="cloudClose" type="button">닫기</button>
         </div>
       </div>
     </div>`;
@@ -1245,7 +1263,6 @@ function openCloudModal(){
   const projectIdEl = $('#fbProjectId');
   const statusEl = $('#fbStatus');
   const autoEl = $('#autoSync');
-
   function setStatus(msg){ statusEl.textContent = '상태: ' + msg; }
 
   $('#cloudClose').onclick = ()=> wrap.remove();
@@ -1257,11 +1274,10 @@ function openCloudModal(){
       setStatus('연결됨');
       updateSafeNote();
       saveFirebaseCfg(cfg);
-      // 리다이렉트 로그인 결과 처리
       try{
         const res = await Cloud.auth.getRedirectResult();
         if(res && res.user){ Cloud.user = res.user; updateSafeNote(); setStatus('로그인: '+userLabel()); }
-      }catch(_){ /* 무시 */ }
+      }catch(_){}
     }catch(e){ alert('초기화 실패: '+e.message); setStatus('오류'); }
   };
 
@@ -1306,7 +1322,7 @@ function openCloudModal(){
     catch(e){ alert('불러오기 실패: '+e.message+'\n\n권한 문제일 수 있어요. "권한 진단"으로 확인하세요.'); }
   };
 
-  autoEl.checked = Cloud.autoSync; // 이전 상태 반영
+  autoEl.checked = Cloud.autoSync;
   autoEl.onchange = async ()=>{
     try{
       if(!Cloud.auth){ const cfg={ apiKey:apiKeyEl.value.trim(), authDomain:authDomainEl.value.trim(), projectId:projectIdEl.value.trim() }; await initFirebase(cfg); }
@@ -1319,7 +1335,6 @@ function openCloudModal(){
     }catch(e){ alert('자동 동기화 설정 실패: '+e.message); autoEl.checked=false; saveAutoSync(false); }
   };
 
-  // 규칙 가이드
   $('#fbRules').onclick = ()=>{
     const md = document.createElement('div');
     md.className='modal-backdrop';
@@ -1331,7 +1346,6 @@ function openCloudModal(){
     md.querySelector('#copyRule').onclick = async ()=>{ try{ await navigator.clipboard.writeText(rules); alert('규칙을 복사했습니다. 콘솔에 붙여넣고 게시하세요.'); }catch(_){ } };
   };
 
-  // 권한 진단
   $('#fbDiag').onclick = async ()=>{
     try{
       const cfg={ apiKey:apiKeyEl.value.trim(), authDomain:authDomainEl.value.trim(), projectId:projectIdEl.value.trim() };
@@ -1387,42 +1401,35 @@ function askConfirm(message, okLabel='확인', cancelLabel='취소'){
     const wrap = document.createElement('div');
     wrap.className = 'modal-backdrop';
     wrap.innerHTML = `
-      <div class=\"modal\">
-        <div class=\"card\">
+      <div class="modal">
+        <div class="card">
           <h3>확인</h3>
-          <div class=\"hint\" style=\"margin:6px 0 12px\">${escapeHTML(message)}</div>
-          <div class=\"row\" style=\"justify-content:flex-end\">
-            <button class=\"btn ghost\" id=\"cfCancel\" type=\"button\">${escapeHTML(cancelLabel)}</button>
-            <button class=\"btn danger\" id=\"cfOk\" type=\"button\">${escapeHTML(okLabel)}</button>
+          <div class="hint" style="margin:6px 0 12px">${escapeHTML(message)}</div>
+          <div class="row" style="justify-content:flex-end">
+            <button class="btn ghost" id="cfCancel" type="button">${escapeHTML(cancelLabel)}</button>
+            <button class="btn danger" id="cfOk" type="button">${escapeHTML(okLabel)}</button>
           </div>
         </div>
       </div>`;
     document.body.appendChild(wrap);
     const onDone = v=>{ cleanup(); resolve(v) };
-    const cleanup = ()=>{
-      document.removeEventListener('keydown', onKey);
-      wrap.remove();
-    };
-    const onKey = (e)=>{
-      if(e.key==='Escape'){ onDone(false); }
-      if(e.key==='Enter'){ onDone(true); }
-    };
+    const cleanup = ()=>{ document.removeEventListener('keydown', onKey); wrap.remove(); };
+    const onKey = (e)=>{ if(e.key==='Escape') onDone(false); if(e.key==='Enter') onDone(true); };
     document.addEventListener('keydown', onKey);
     wrap.querySelector('#cfCancel').onclick = ()=> onDone(false);
     wrap.querySelector('#cfOk').onclick = ()=> onDone(true);
-    // 바깥 클릭 취소
     wrap.addEventListener('click', (e)=>{ if(e.target===wrap) onDone(false); });
   });
 }
 
-// 날짜 입력 자동 달력 표시 (지원 브라우저에서 showPicker 사용)
+// 날짜 입력 자동 달력 표시
 function enableAutoShowDatePickers(scope=document){
   const inputs = scope.querySelectorAll('input[type="date"]');
   inputs.forEach(inp=>{
-    if(inp.dataset.pickerBound) return; // 중복 바인딩 방지
+    if(inp.dataset.pickerBound) return;
     const open = () => {
       if(typeof inp.showPicker === 'function'){
-        try{ inp.showPicker(); }catch(e){ /* 일부 브라우저 보안 제약 등 무시 */ }
+        try{ inp.showPicker(); }catch(e){}
       }
     };
     inp.addEventListener('focus', open);
@@ -1431,7 +1438,7 @@ function enableAutoShowDatePickers(scope=document){
   });
 }
 
-// FAB 동작: 목록에선 새 여행, 상세에선 새 지출 포커스
+// FAB
 function setupFAB(){
   const btn = document.getElementById('btnAdd');
   btn.onclick = ()=>{
@@ -1446,80 +1453,6 @@ function setupFAB(){
   }
 }
 
-// ===== 내장 테스트 =====
-function runSelfTests(){
-  const assert = (name, cond) => console[cond? 'log':'error'](`${cond?'✅':'❌'} ${name}`);
-  console.log('--- Self Tests Start ---');
-  // TC1: 3인 균등 분배 30,000원 (A가 결제)
-  const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'};
-  const trip1={currency:'KRW', people:[A,B,C], expenses:[{amount:30000, paidBy:'A', users:['A','B','C']}]};
-  const s1 = calcTripStats(trip1);
-  assert('TC1 총액=30000', s1.totalAmount===30000);
-  const bA1 = s1.balances.find(x=>x.id==='A'), bB1=s1.balances.find(x=>x.id==='B'), bC1=s1.balances.find(x=>x.id==='C');
-  assert('TC1 A 순액 > 0', bA1.net>0);
-  assert('TC1 B 순액 < 0', bB1.net<0);
-  assert('TC1 C 순액 < 0', bC1.net<0);
-  assert('TC1 정산 2건', s1.settlements.length===2);
-
-  // TC2: 통화 step - KWD는 0.001, KRW는 1
-  assert('TC2 step KWD=0.001', stepForCurrency('KWD')==='0.001');
-  assert('TC2 step KRW=1', stepForCurrency('KRW')==='1');
-
-  // TC3: 미세 금액 임계값 - 0.01을 2명이 사용하면 정산 없음(2소수 통화)
-  const tTiny={currency:'USD', people:[A,B], expenses:[{amount:0.01, paidBy:'A', users:['A','B']}]};
-  assert('TC3 정산 0건', calcTripStats(tTiny).settlements.length===0);
-
-  // TC4: 시트 행 빌더 - 여행일자는 시작일만
-  const tSheet={name:'S', start:'2025-01-01', end:'2025-01-03', currency:'KRW', people:[A], expenses:[]};
-  const bak=App.state; App.state={trips:[tSheet]}; const r=buildSheetRows('trip'); App.state=bak;
-  assert('TC4 헤더 OK', r[0][0]==='여행 시작일');
-  assert('TC4 시작일 표시', r[1][0]==='2025-01-01');
-
-  // TC5: removeTripById 순수 함수
-  const st = {version:1, trips:[{id:'X'},{id:'Y'},{id:'Z'}]};
-  const st2 = removeTripById(st, 'Y');
-  assert('TC5 삭제 후 길이 -1', st2.trips.length===2 && st2.trips.findIndex(t=>t.id==='Y')===-1);
-
-  // TC6: 완전 상쇄 케이스(정산 0)
-  const tZero={currency:'KRW', people:[A,B], expenses:[
-    {amount:10000, paidBy:'A', users:['A','B']},
-    {amount:10000, paidBy:'B', users:['A','B']}
-  ]};
-  const sZero = calcTripStats(tZero);
-  assert('TC6 총액=20000', sZero.totalAmount===20000);
-  assert('TC6 정산 0건', sZero.settlements.length===0);
-
-  // TC7: 요약/문자 포맷에 통화코드가 직접 노출되지 않음
-  const sumTxt = buildSummaryText({name:'T', type:'친구', currency:'USD', people:[A,B], start:'2025-01-01', end:'2025-01-02', expenses:[{amount:1234.56, paidBy:'A', users:['A','B'], title:'테스트'}]});
-  assert('TC7 요약 텍스트에 통화코드 문자열 없음', !/\b(KRW|USD|EUR|JPY)\b/.test(sumTxt));
-
-  // TC8: 평균 사용자 계산(참여자 2명만 사용)
-  const tAvg={currency:'KRW', people:[A,B,C], expenses:[{amount:9000, paidBy:'B', users:['A','B']}]};
-  const sAvg = calcTripStats(tAvg);
-  assert('TC8 평균 = 9000/2=4500', sAvg.avgPerUser===4500);
-
-  // TC9: CSV 이스케이프 확인
-  const csv = rowsToCSV([["헤더", 'a,"b",c']]);
-  assert('TC9 따옴표 이스케이프', csv.includes('"a,""b"",c"'));
-
-  // TC10: tripDisplayName 포맷 확인
-  const td={start:'2025-12-31', name:'연말'}; 
-  assert('TC10 표시명', tripDisplayName(td)==='2025-12-31_연말');
-
-  // TC11: JPY(0소수)에서 미세 분배 라운딩
-  const tJPY={currency:'JPY', people:[A,B], expenses:[{amount:1, paidBy:'A', users:['A','B']}]};
-  const sJPY=calcTripStats(tJPY);
-  assert('TC11 JPY 총액=1', sJPY.totalAmount===1);
-  assert('TC11 JPY 정산 0건', sJPY.settlements.length===0);
-
-  // TC12: USD 0.01을 두 명이 사용 -> 임계치로 정산 없음
-  const tUSD={currency:'USD', people:[A,B], expenses:[{amount:0.01, paidBy:'A', users:['A','B']}]};
-  const sUSD=calcTripStats(tUSD);
-  assert('TC12 USD 정산 0건', sUSD.settlements.length===0);
-
-  console.log('--- Self Tests End ---');
-}
-
 // ===== 자동 초기화/종료 훅 =====
 async function initCloudAuto(){
   try{
@@ -1527,16 +1460,13 @@ async function initCloudAuto(){
     const cfg = loadFirebaseCfg();
     if(cfg && cfg.apiKey && cfg.authDomain && cfg.projectId){
       await initFirebase(cfg);
-      // 리다이렉트 복귀 처리
       try{ const res = await Cloud.auth.getRedirectResult(); if(res && res.user){ Cloud.user=res.user; } }catch(_){ }
-      // 이미 로그인된 세션이면 즉시 실시간 구독
       if(Cloud.user && Cloud.autoSync){ startRealtime(true); }
       updateSafeNote();
     }
   }catch(e){ console.warn('클라우드 자동 초기화 실패:', e.message); }
 }
 
-// 탭 숨김/닫힘/오프라인 전환 시 푸시 보장
 window.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushCloudPush(); });
 window.addEventListener('pagehide', flushCloudPush);
 window.addEventListener('online', ()=>{ if(Cloud.autoSync) cloudSaveNow().catch(()=>{}); });
@@ -1545,7 +1475,6 @@ window.addEventListener('online', ()=>{ if(Cloud.autoSync) cloudSaveNow().catch(
 function init(){
   load();
   if(App.state.trips.length===0){
-    // 샘플 여행 (테스트 케이스 포함)
     const tId = uid();
     const p1={id:uid(),name:'민수'}, p2={id:uid(),name:'지영'}, p3={id:uid(),name:'현우'};
     App.state.trips.push({
@@ -1567,7 +1496,6 @@ function init(){
   document.getElementById('btnShare').onclick = shareSummary;
   document.getElementById('btnChatShare').onclick = shareChat;
   document.getElementById('btnExport').onclick = exportJSON;
-  document.getElementById('btnRunTests').onclick = runSelfTests;
   document.getElementById('btnSheet').onclick = openSheetExportModal;
   document.getElementById('btnCloud').onclick = openCloudModal;
   document.getElementById('importJson').addEventListener('change', (e)=>{
@@ -1575,7 +1503,6 @@ function init(){
     e.target.value='';
   })
   updateSafeNote();
-  // 클라우드 자동 초기화
   initCloudAuto();
 }
 
