@@ -727,25 +727,26 @@ function buildSummaryText(t){
   const currency = t.currency||'KRW';
   const peopleList = t.people.map(p=>p.name).join(', ');
   const lines = [];
+
+  // 머리말
   lines.push(`📌 여행 정산 — ${t.name}${t.type? ' ('+t.type+')':''}`);
   if(t.start || t.end){ lines.push(`기간: ${t.start||''} ~ ${t.end||''}`) }
   lines.push(`참가자: ${peopleList}`);
   lines.push('');
+
+  // 총액/건수
   lines.push(`총액: ${fmtPlain(s.totalAmount, currency)}`);
   lines.push(`지출 ${t.expenses.length}건`);
   lines.push('');
+
+  // 개인별 정산
   lines.push('— 개인별 정산');
   s.balances.forEach(b=>{
     const tag = b.net>0? '받을 금액' : (b.net<0? '보낼 금액':'정산 완료');
     lines.push(`• ${b.name}: 지불 ${fmtPlain(b.paid, currency)}, 사용 ${fmtPlain(b.used, currency)}, ${tag} ${fmtPlain(b.net, currency)}`);
-  })
-  lines.push('');
-  if(s.settlements.length){
-    lines.push('— 송금 제안');
-    s.settlements.forEach(x=> lines.push(`• ${x.from} → ${x.to}: ${fmtPlain(x.amount, currency)}`));
-  }else{
-    lines.push('— 모든 정산이 완료되었습니다.');
-  }
+  });
+
+  // 세부 지출
   lines.push('');
   lines.push('세부 지출');
   (t.expenses||[]).forEach(e=>{
@@ -753,9 +754,20 @@ function buildSummaryText(t){
     const payer = t.people.find(p=>p.id===e.paidBy)?.name || '';
     const memoOne = (e.memo||'').replace(/\n/g,' ').trim();
     lines.push(`• ${e.date||''} ${e.title}: ${fmtPlain(e.amount, currency)} (지불자 ${payer}, 사용: ${users})${memoOne? ' — 메모: '+memoOne : ''}`);
-  })
+  });
+
+  // ✅ 송금 섹션을 맨 마지막에 위치 & 제목 변경(송금제안 → 송금액)
+  lines.push('');
+  if(s.settlements.length){
+    lines.push('— 송금액');
+    s.settlements.forEach(x=> lines.push(`• ${x.from} → ${x.to}: ${fmtPlain(x.amount, currency)}`));
+  }else{
+    lines.push('— 모든 정산이 완료되었습니다.');
+  }
+
   return lines.join('\n');
 }
+
 
 function buildChatMessage(t){
   const s = calcTripStats(t);
